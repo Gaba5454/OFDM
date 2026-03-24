@@ -1,3 +1,0 @@
-/home/egor/Personal/OFDM/ofdm_visualizer/build/CMakeFiles/ofdm_visualizer.dir
-/home/egor/Personal/OFDM/ofdm_visualizer/build/CMakeFiles/edit_cache.dir
-/home/egor/Personal/OFDM/ofdm_visualizer/build/CMakeFiles/rebuild_cache.dir
