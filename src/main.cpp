@@ -1,301 +1,200 @@
+// main.cpp
 #include <iostream>
 #include <fftw3.h>
-#include <cmath>
+#include <math.h>
 #include <complex>
 #include <vector>
-#include <iomanip>
+#include <bitset>
+#include <fstream>
+#include <random> // Библиотека для рандомной генерации, которая используется в функции channelSimulation
 
-// ImGui + ImPlot
-#include "imgui.h"
-#include "imgui_impl_glfw.h"
-#include "imgui_impl_opengl3.h"
-#include "implot.h"
+#define LTE 128
 
-// GLFW
-#include <GLFW/glfw3.h>
+using ComplexSymbol = std::complex<double>;
 
-#define N_SUBCARRIERS 64
-#define N_USED         52
-#define CP_LENGTH      16
 
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
 
-// Глобальные данные для отрисовки (float для совместимости с ImPlot)
-std::vector<float> plot_time_real, plot_time_imag, plot_time_amp;
-std::vector<float> plot_freq_amp;
-std::vector<float> plot_const_real, plot_const_imag;
+std::vector<int8_t> string_to_bits(const std::string& text) {
+    std::vector<int8_t> bits;
+    bits.reserve(text.size() * 8);
+    
+    for (unsigned char c : text) {  
 
-// ✅ Исправленная генерация QPSK символов (4 точки)
-std::complex<double> generate_qpsk_symbol(int seed) {
-    // QPSK: 4 точки в комплексной плоскости
-    switch (seed % 4) {
-        case 0: return std::complex<double>(1.0, 1.0);
-        case 1: return std::complex<double>(-1.0, 1.0);
-        case 2: return std::complex<double>(-1.0, -1.0);
-        case 3: return std::complex<double>(1.0, -1.0);
-        default: return std::complex<double>(1.0, 1.0);
+        for (int i = 7; i >= 0; --i) {
+            bits.push_back((c >> i) & 1);
+        }
     }
+    return bits;
 }
 
-// Основная функция OFDM-передатчика
-void run_ofdm_transmitter() {
-    // 1. Формируем частотные символы
-    std::vector<std::complex<double>> freq_symbols(N_SUBCARRIERS, {0, 0});
+
+
+std::vector<ComplexSymbol> QPSK(const std::vector<int8_t> &in_bits) {
     
-    int data_idx = 0;
-    for (int k = -N_USED/2; k <= N_USED/2; k++) {
-        if (k == 0) continue;  // DC null
-        int idx = (k < 0) ? k + N_SUBCARRIERS : k;
-        freq_symbols[idx] = generate_qpsk_symbol(data_idx++);
+// Переменная количество выходных символов
+    size_t num_symbols = in_bits.size() / 2;
+
+// Объявляется переменная для выходного массива, и сразу же удобно 
+// под неё выделяется память на количество выходных символов
+    std::vector<ComplexSymbol> out_sym;
+    out_sym.reserve(num_symbols);
+
+
+
+// Цикл преобразования битов в символы, в конце каждой итерации
+// Вычисляется финальная координата точки (с нормализацией).
+// Конструируется объект std::complex прямо в памяти вектора.
+// Увеличивается размер вектора на 1.
+    for(size_t i = 0; i < in_bits.size(); i+=2) {
+        int8_t bit0 = in_bits[i];
+        int8_t bit1 = in_bits[i+1];
+
+        double i_component = (bit0 == 0) ? -1.0f : 1.0f;
+        double q_component = (bit1 == 0) ? -1.0f : 1.0f;
+
+        out_sym.emplace_back(i_component, q_component);
     }
-    
-    // 2. Выделяем память FFTW
-    fftw_complex *in  = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * N_SUBCARRIERS);
-    fftw_complex *out = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * N_SUBCARRIERS);
-    
-    for (int i = 0; i < N_SUBCARRIERS; i++) {
-        in[i][0] = freq_symbols[i].real();
-        in[i][1] = freq_symbols[i].imag();
+    return out_sym;
+}
+
+
+
+std::vector<ComplexSymbol> IFFT_LTE(const std::vector<ComplexSymbol>& in_sym) {
+    fftw_complex* in = (fftw_complex*)fftw_malloc(sizeof(fftw_complex) * LTE);
+    fftw_complex* out = (fftw_complex*)fftw_malloc(sizeof(fftw_complex) * LTE);
+
+    for(size_t i = 0; i < LTE; ++i) {
+        in[i][0] = 0.0;
+        in[i][1] = 0.0;
     }
-    
-    // 3. IFFT
-    fftw_plan ifft_plan = fftw_plan_dft_1d(N_SUBCARRIERS, in, out, FFTW_BACKWARD, FFTW_ESTIMATE);
-    fftw_execute(ifft_plan);
-    
-    // 4. Нормировка и подготовка данных для графиков
-    plot_time_real.clear(); plot_time_imag.clear(); plot_time_amp.clear();
-    plot_freq_amp.clear();
-    plot_const_real.clear(); plot_const_imag.clear();
-    
-    for (int i = 0; i < N_SUBCARRIERS; i++) {
-        double real = out[i][0] / N_SUBCARRIERS;
-        double imag = out[i][1] / N_SUBCARRIERS;
-        double amp = sqrt(real*real + imag*imag);
-        
-        // Конвертируем в float для ImPlot
-        plot_time_real.push_back(static_cast<float>(real));
-        plot_time_imag.push_back(static_cast<float>(imag));
-        plot_time_amp.push_back(static_cast<float>(amp));
+
+    size_t sym_idx = 0; 
+
+    // Левая часть
+    for (size_t i = 28; i <= 63 && sym_idx < in_sym.size(); ++i) {
+        in[i][0] = in_sym[sym_idx].real();
+        in[i][1] = in_sym[sym_idx].imag();
+        ++sym_idx; 
     }
-    
-    // Спектр амплитуд по поднесущим
-    for (int i = 0; i < N_SUBCARRIERS; i++) {
-        double amp = std::abs(freq_symbols[i]);
-        plot_freq_amp.push_back(static_cast<float>(amp));
+
+    // Правая часть
+    for (size_t i = 65; i <= 100 && sym_idx < in_sym.size(); ++i) {
+        in[i][0] = in_sym[sym_idx].real();
+        in[i][1] = in_sym[sym_idx].imag();
+        ++sym_idx;
     }
+    fftw_plan plan = fftw_plan_dft_1d(
+                                      LTE, 
+                                      in, 
+                                      out,
+                                      FFTW_BACKWARD,
+                                      FFTW_ESTIMATE
+                                    );
     
-    // Созвездие (только активные поднесущие)
-    for (int k = -N_USED/2; k <= N_USED/2; k++) {
-        if (k == 0) continue;
-        int idx = (k < 0) ? k + N_SUBCARRIERS : k;
-        plot_const_real.push_back(static_cast<float>(freq_symbols[idx].real()));
-        plot_const_imag.push_back(static_cast<float>(freq_symbols[idx].imag()));
+    fftw_execute(plan);
+
+    std::vector<ComplexSymbol> out_sig(LTE);
+    for(size_t i = 0; i < LTE; ++i){
+        out_sig[i] = ComplexSymbol(out[i][0],
+                                   out[i][1]);
     }
-    
-    // Очистка
-    fftw_destroy_plan(ifft_plan);
+
+    fftw_destroy_plan(plan);
     fftw_free(in);
     fftw_free(out);
+
+    return out_sig;
 }
 
-// Обработчик закрытия окна
-void glfw_error_callback(int error, const char* description) {
-    std::cerr << "GLFW Error " << error << ": " << description << "\n";
+
+
+std::vector<ComplexSymbol> cyclicPrefix(const std::vector<ComplexSymbol>& symbol, size_t cp_len) {
+
+    if(cp_len >= symbol.size()){
+        throw std::invalid_argument("Длина должна быть меньше размера символа.");
+    }
+
+    std::vector<ComplexSymbol> output;
+
+    output.reserve(symbol.size()+cp_len);
+
+    // 1. Копируем последние cp_len отсчётов в начало
+    output.insert(output.end(), 
+                  symbol.end() - cp_len, 
+                  symbol.end());
+    
+    // 2. Копируем основной символ целиком
+    output.insert(output.end(), 
+                  symbol.begin(), 
+                  symbol.end());
+
+    return output; 
 }
+
+
+/* Функция симуляции канала передачи
+@brief Симулирует поведение канала передачи
+@param arrayForTx  массив данных на передачу
+@param arr_len размер входного массива
+@return arr_channel массив данных после обработки
+*/
+std::vector<ComplexSymbol> channelSimulation(const std::vector<ComplexSymbol>& arrayForTx, size_t arr_len, double noise_stddev = 1.0) {
+    
+    size_t lenght = arr_len + arr_len;
+    fftw_complex* arr_channel = (fftw_complex*)fftw_malloc(sizeof(fftw_complex) * lenght);
+    
+    // Инициализация генератора и распределения
+    static std::random_device rd;
+    static std::mt19937 gen(rd());
+    std::normal_distribution<double> dist(0.0, noise_stddev);
+
+    // Заполняем массив комплексным AWGN шумом
+    for (size_t i = 0; i < lenght; ++i) {
+        arr_channel[i][0] = dist(gen); // Действительная часть (Re)
+        arr_channel[i][1] = dist(gen); // Мнимая часть (Im)
+    }
+
+}
+
 
 int main() {
-    // Инициализация GLFW
-    glfwSetErrorCallback(glfw_error_callback);
-    if (!glfwInit()) return 1;
-    
-    // Настройка OpenGL
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-    
-    GLFWwindow* window = glfwCreateWindow(1280, 900, "OFDM Visualizer", nullptr, nullptr);
-    if (!window) { glfwTerminate(); return 1; }
-    
-    glfwMakeContextCurrent(window);
-    glfwSwapInterval(1);  // VSync
-    
-    // Инициализация ImGui
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    ImPlot::CreateContext();
-    
-    ImGuiIO& io = ImGui::GetIO();
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-    
-    // ✅ Загрузка шрифта с поддержкой кириллицы
-    ImFontConfig font_cfg;
-    font_cfg.FontDataOwnedByAtlas = false;
-    
-    // Список возможных путей к шрифтам с кириллицей
-    const char* font_paths[] = {
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-        "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
-        "/usr/share/fonts/TTF/DejaVuSans.ttf",
-    };
-    
-    bool font_loaded = false;
-    for (const char* path : font_paths) {
-        if (FILE* f = fopen(path, "rb")) {
-            fclose(f);
-            // Загружаем шрифт с поддержкой кириллицы
-            static const ImWchar glyph_ranges[] = {
-                0x0020, 0x00FF, // Basic Latin + Latin Supplement
-                0x0400, 0x044F, // Cyrillic
-                0x0450, 0x0459, // Cyrillic Supplement
-                0x2100, 0x2144, // Letter-like symbols
-                0,
-            };
-            io.Fonts->AddFontFromFileTTF(path, 16.0f, &font_cfg, glyph_ranges);
-            font_loaded = true;
-            std::cout << "✅ Font loaded: " << path << std::endl;
-            break;
+
+        std::string text = "BUREAU1440thebest!";
+        std::cout << "Исходный текст: \"" << text << "\"" << std::endl;
+        std::cout << "Длина: " << text.size() << " символов = " << text.size() * 8 << " бит" << std::endl;
+        
+        std::vector<int8_t> raw_bits = string_to_bits(text);
+        
+        std::cout << "\nБиты: ";
+        for (size_t i = 0; i < 144; i++) {
+            std::cout << (int)raw_bits[i];
         }
-    }
-    
-    if (!font_loaded) {
-        std::cout << "⚠️  No Cyrillic font found, using default" << std::endl;
-        io.Fonts->AddFontDefault();
-    }
-    
-    // Стиль тёмной темы
-    ImGui::StyleColorsDark();
-    ImPlot::StyleColorsDark();
-    
-    // Инициализация бэкендов
-    ImGui_ImplGlfw_InitForOpenGL(window, true);
-    ImGui_ImplOpenGL3_Init("#version 330 core");
-    
-    // Параметры отрисовки
-    bool show_time_domain = true;
-    bool show_freq_domain = true;
-    bool show_constellation = true;
-    bool auto_update = true;
-    int subcarriers = N_SUBCARRIERS;
-    
-    // Первый запуск
-    run_ofdm_transmitter();
-    
-    // Главный цикл
-    while (!glfwWindowShouldClose(window)) {
-        glfwPollEvents();
+        std::cout << std::endl;
         
-        // Новый кадр
-        ImGui_ImplOpenGL3_NewFrame();
-        ImGui_ImplGlfw_NewFrame();
-        ImGui::NewFrame();
-        
-        // === Панель управления ===
-        ImGui::Begin("🎛️ Управление");
-        
-        ImGui::Checkbox("📈 Временная область", &show_time_domain);
-        ImGui::Checkbox("📊 Частотная область", &show_freq_domain);
-        ImGui::Checkbox("🔵 Созвездие", &show_constellation);
-        ImGui::Checkbox("🔄 Автообновление", &auto_update);
-        
-        ImGui::Separator();
-        
-        if (ImGui::Button("🔄 Обновить")) {
-            run_ofdm_transmitter();
+        std::vector<ComplexSymbol> symbols = QPSK(raw_bits);
+        int count = 0;
+        std::cout << "\nСимволы: ";
+        for (size_t i = 0; i < 72; i++) {
+            std::cout << (ComplexSymbol)symbols[i];
+            count++;
         }
-        
-        ImGui::SliderInt("Поднесущие", &subcarriers, 16, 256);
-        
-        ImGui::Text("FPS: %.1f", io.Framerate);
-        ImGui::End();
-        
-        // === График: Временной сигнал ===
-        if (show_time_domain) {
-            ImGui::Begin("⏱️ Временной сигнал (после IFFT)");
-            if (ImPlot::BeginPlot("OFDM Symbol", ImVec2(-1, 300))) {
-                ImPlot::SetupAxis(ImAxis_X1, "Отсчёт");
-                ImPlot::SetupAxis(ImAxis_Y1, "Амплитуда");
-                ImPlot::SetupLegend(ImPlotLocation_NorthEast);
-                
-                // Используем float для X, чтобы совпадало с Y
-                std::vector<float> x(N_SUBCARRIERS);
-                for (int i = 0; i < N_SUBCARRIERS; i++) x[i] = static_cast<float>(i);
-                
-                ImPlot::PlotLine("Real", x.data(), plot_time_real.data(), N_SUBCARRIERS);
-                ImPlot::PlotLine("Imag", x.data(), plot_time_imag.data(), N_SUBCARRIERS);
-                ImPlot::PlotLine("Amplitude", x.data(), plot_time_amp.data(), N_SUBCARRIERS);
-                
-                ImPlot::EndPlot();
-            }
-            ImGui::End();
+        std::cout << std::endl << count;
+        std::cout << std::endl;
+
+        std::vector<ComplexSymbol> ofdm_symbols = IFFT_LTE(symbols);
+        int count1 = 0;
+        std::cout << "\nОБПФ: ";
+        for (size_t i = 0; i < 128; i++) {
+            std::cout << (ComplexSymbol)ofdm_symbols[i];
+            count1++;
         }
-        
-        // === График: Частотный спектр ===
-        if (show_freq_domain) {
-            ImGui::Begin("📡 Спектр поднесущих");
-            if (ImPlot::BeginPlot("Frequency Domain", ImVec2(-1, 300))) {
-                ImPlot::SetupAxis(ImAxis_X1, "Индекс поднесущей");
-                ImPlot::SetupAxis(ImAxis_Y1, "Амплитуда");
-                ImPlot::SetupAxesLimits(-N_SUBCARRIERS/2, N_SUBCARRIERS/2, 0, 2);
-                
-                // Центрируем спектр для наглядности
-                std::vector<float> x_freq(N_SUBCARRIERS);
-                std::vector<float> y_freq_shifted(N_SUBCARRIERS);
-                for (int i = 0; i < N_SUBCARRIERS; i++) {
-                    x_freq[i] = (i < N_SUBCARRIERS/2) ? static_cast<float>(i) : static_cast<float>(i - N_SUBCARRIERS);
-                    y_freq_shifted[i] = plot_freq_amp[i];
-                }
-                
-                ImPlot::PlotStems("Amplitude", x_freq.data(), y_freq_shifted.data(), N_SUBCARRIERS);
-                
-                ImPlot::EndPlot();
-            }
-            ImGui::End();
-        }
-        
-        // === График: Созвездие ===
-        if (show_constellation) {
-            ImGui::Begin("🔵 Созвездие модуляции");
-            if (ImPlot::BeginPlot("Constellation", ImVec2(-1, -1), ImPlotFlags_Equal)) {
-                ImPlot::SetupAxis(ImAxis_X1, "I (Real)");
-                ImPlot::SetupAxis(ImAxis_Y1, "Q (Imag)");
-                ImPlot::SetupAxesLimits(-2, 2, -2, 2);
-                ImPlot::PlotScatter("Symbols", plot_const_real.data(), plot_const_imag.data(), plot_const_real.size());
-                
-                // Опорные точки для QPSK
-                if (plot_const_real.size() > 0) {
-                    double ref_x[] = {1.0, -1.0, 1.0, -1.0};
-                    double ref_y[] = {1.0, 1.0, -1.0, -1.0};
-                    ImPlot::PlotScatter("QPSK Ref", ref_x, ref_y, 4);
-                }
-                
-                ImPlot::EndPlot();
-            }
-            ImGui::End();
-        }
-        
-        // Отрисовка
-        ImGui::Render();
-        int display_w, display_h;
-        glfwGetFramebufferSize(window, &display_w, &display_h);
-        glViewport(0, 0, display_w, display_h);
-        glClearColor(0.1f, 0.1f, 0.15f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
-        
-        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-        glfwSwapBuffers(window);
-    }
-    
-    // Очистка
-    ImGui_ImplOpenGL3_Shutdown();
-    ImGui_ImplGlfw_Shutdown();
-    ImPlot::DestroyContext();
-    ImGui::DestroyContext();
-    
-    glfwDestroyWindow(window);
-    glfwTerminate();
-    
-    return 0;
+        std::cout << std::endl << count1;
+        std::cout << std::endl;
+
+        // === Добавление циклического префикса ===
+        const size_t CP_LENGTH = 10;  // ~1/12 от 128
+        std::vector<ComplexSymbol> ofdm_with_cp = cyclicPrefix(ofdm_symbols, CP_LENGTH);
+        std::cout << "\n✓ Символ с циклическим префиксом: " << ofdm_with_cp.size() << " отсчётов" << std::endl;
+
+       return 0;
 }
