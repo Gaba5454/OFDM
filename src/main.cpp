@@ -13,7 +13,6 @@
 using ComplexSymbol = std::complex<double>;
 
 
-
 std::vector<int8_t> string_to_bits(const std::string& text) {
     std::vector<int8_t> bits;
     bits.reserve(text.size() * 8);
@@ -28,7 +27,6 @@ std::vector<int8_t> string_to_bits(const std::string& text) {
 }
 
 
-
 std::vector<ComplexSymbol> QPSK(const std::vector<int8_t> &in_bits) {
     
 // Переменная количество выходных символов
@@ -38,8 +36,6 @@ std::vector<ComplexSymbol> QPSK(const std::vector<int8_t> &in_bits) {
 // под неё выделяется память на количество выходных символов
     std::vector<ComplexSymbol> out_sym;
     out_sym.reserve(num_symbols);
-
-
 
 // Цикл преобразования битов в символы, в конце каждой итерации
 // Вычисляется финальная координата точки (с нормализацией).
@@ -58,8 +54,18 @@ std::vector<ComplexSymbol> QPSK(const std::vector<int8_t> &in_bits) {
 }
 
 
+std::vector<ComplexSymbol> OFDM(const std::vector<ComplexSymbol>& in_sym) {
 
-std::vector<ComplexSymbol> IFFT_LTE(const std::vector<ComplexSymbol>& in_sym) {
+    /* 
+    *  Нули
+    *  С 0 по 27, на 64, с 101 по 127 
+    */
+    /* 
+    *  Пилоты
+    *  28, 38, 48, 58, 68, 78, 88, 98
+    */
+
+
     fftw_complex* in = (fftw_complex*)fftw_malloc(sizeof(fftw_complex) * LTE);
     fftw_complex* out = (fftw_complex*)fftw_malloc(sizeof(fftw_complex) * LTE);
 
@@ -106,8 +112,7 @@ std::vector<ComplexSymbol> IFFT_LTE(const std::vector<ComplexSymbol>& in_sym) {
     return out_sig;
 }
 
-
-
+// Думаю нужно поменять алгоритм работы этой функции, чтобы она была более C подобной
 std::vector<ComplexSymbol> cyclicPrefix(const std::vector<ComplexSymbol>& symbol, size_t cp_len) {
 
     if(cp_len >= symbol.size()){
@@ -140,33 +145,48 @@ std::vector<ComplexSymbol> cyclicPrefix(const std::vector<ComplexSymbol>& symbol
 */
 std::vector<ComplexSymbol> channelSimulation(const std::vector<ComplexSymbol>& arrayForTx, size_t arr_len, double noise_stddev = 1.0) {
     
-    size_t lenght = arr_len + arr_len;
-    fftw_complex* arr_channel = (fftw_complex*)fftw_malloc(sizeof(fftw_complex) * lenght);
+    size_t length = arr_len + arr_len;
+    fftw_complex* arr_channel = (fftw_complex*)fftw_malloc(sizeof(fftw_complex) * length);
     
     // Инициализация генератора и распределения
-    static std::random_device rd;
+
+    /* Интерфейс к аппаратному генератору случайных чисел (если ОС и железо поддерживают). Он выдаёт непредсказуемые значения, а не псевдослучайные. */
+    static std::random_device rd;            
+
+    /*Это название алгоритма: "Вихрь Мерсенна". Он не берёт случайность извне, а вычисляет её пo формуле. rd в данной строке просто seed*/
     static std::mt19937 gen(rd());
+
     std::normal_distribution<double> dist(0.0, noise_stddev);
 
     // Заполняем массив комплексным AWGN шумом
-    for (size_t i = 0; i < lenght; ++i) {
+    for (size_t i = 0; i < length; ++i) {
         arr_channel[i][0] = dist(gen); // Действительная часть (Re)
         arr_channel[i][1] = dist(gen); // Мнимая часть (Im)
     }
+    std::vector<ComplexSymbol> result;
+    result.reserve(length);
+        for (size_t i = 0; i < length; ++i) {
+        // Создаём ComplexSymbol из действительной и мнимой части
+        // Если ComplexSymbol — это std::complex<double>, этот код тоже сработает
+        result.emplace_back(arr_channel[i][0], arr_channel[i][1]);
+    }
+     // 2. Освобождение памяти FFTW (обязательно!)
+    fftw_free(arr_channel);
 
+    return result;
 }
 
 
 int main() {
 
-        std::string text = "BUREAU1440thebest!";
+        std::string text = "BUREAU1440";
         std::cout << "Исходный текст: \"" << text << "\"" << std::endl;
         std::cout << "Длина: " << text.size() << " символов = " << text.size() * 8 << " бит" << std::endl;
         
         std::vector<int8_t> raw_bits = string_to_bits(text);
         
         std::cout << "\nБиты: ";
-        for (size_t i = 0; i < 144; i++) {
+        for (size_t i = 0; i < text.size() * 8; i++) {
             std::cout << (int)raw_bits[i];
         }
         std::cout << std::endl;
@@ -174,17 +194,17 @@ int main() {
         std::vector<ComplexSymbol> symbols = QPSK(raw_bits);
         int count = 0;
         std::cout << "\nСимволы: ";
-        for (size_t i = 0; i < 72; i++) {
+        for (size_t i = 0; i < symbols.size(); i++) {
             std::cout << (ComplexSymbol)symbols[i];
             count++;
         }
-        std::cout << std::endl << count;
+        std::cout << std::endl << "Всего символов: " << count;
         std::cout << std::endl;
 
-        std::vector<ComplexSymbol> ofdm_symbols = IFFT_LTE(symbols);
+        std::vector<ComplexSymbol> ofdm_symbols = OFDM(symbols);
         int count1 = 0;
         std::cout << "\nОБПФ: ";
-        for (size_t i = 0; i < 128; i++) {
+        for (size_t i = 0; i < ofdm_symbols.size(); i++) {
             std::cout << (ComplexSymbol)ofdm_symbols[i];
             count1++;
         }
@@ -192,7 +212,7 @@ int main() {
         std::cout << std::endl;
 
         // === Добавление циклического префикса ===
-        const size_t CP_LENGTH = 10;  // ~1/12 от 128
+        const size_t CP_LENGTH = 20;  // ~1/12 от 128
         std::vector<ComplexSymbol> ofdm_with_cp = cyclicPrefix(ofdm_symbols, CP_LENGTH);
         std::cout << "\n✓ Символ с циклическим префиксом: " << ofdm_with_cp.size() << " отсчётов" << std::endl;
 
