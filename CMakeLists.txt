@@ -1,49 +1,74 @@
-cmake_minimum_required(VERSION 3.10)
-project(ofdm_visualizer)
+cmake_minimum_required(VERSION 3.14)
+project(backend_notes)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# 1. Поиск зависимостей
-find_package(OpenGL REQUIRED)
-find_package(glfw3 REQUIRED)
+set(THIRD_PARTY_DIR ${PROJECT_SOURCE_DIR}/third_party)
+set(SRC_DIR ${PROJECT_SOURCE_DIR}/src)
+set(INCLUDE_DIR ${PROJECT_SOURCE_DIR}/include)
 
-# 2. Поиск FFTW через pkg-config (работает на Ubuntu!)
+# === Зависимости ===
+find_package(SDL2 REQUIRED)
+find_package(OpenGL REQUIRED)
+find_package(GLEW REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(FFTW3 REQUIRED fftw3)
 
-# 3. Исходники ImGui
-set(IMGUI_DIR ${CMAKE_SOURCE_DIR}/imgui)
-set(IMPLOT_DIR ${CMAKE_SOURCE_DIR}/implot)
+# === ImGui (с бэкендами) ===
+add_library(imgui STATIC
+    ${THIRD_PARTY_DIR}/imgui/imgui.cpp
+    ${THIRD_PARTY_DIR}/imgui/imgui_draw.cpp
+    ${THIRD_PARTY_DIR}/imgui/imgui_demo.cpp
+    ${THIRD_PARTY_DIR}/imgui/imgui_tables.cpp
+    ${THIRD_PARTY_DIR}/imgui/imgui_widgets.cpp
+    ${THIRD_PARTY_DIR}/imgui/backends/imgui_impl_sdl2.cpp
+    ${THIRD_PARTY_DIR}/imgui/backends/imgui_impl_opengl3.cpp
+)
 
-file(GLOB IMGUI_SOURCES 
-    ${IMGUI_DIR}/*.cpp 
-    ${IMGUI_DIR}/backends/imgui_impl_glfw.cpp 
-    ${IMGUI_DIR}/backends/imgui_impl_opengl3.cpp)
+target_include_directories(imgui PUBLIC 
+    ${THIRD_PARTY_DIR}/imgui
+    ${THIRD_PARTY_DIR}/imgui/backends
+    ${SDL2_INCLUDE_DIRS}        # ← ДОБАВЛЕНО: пути к заголовкам SDL2
+    ${OPENGL_INCLUDE_DIR}       # ← ДОБАВЛЕНО: для OpenGL-бэкенда
+    ${GLEW_INCLUDE_DIRS}        # ← ДОБАВЛЕНО: если используется GLEW
+)
 
-file(GLOB IMPLOT_SOURCES ${IMPLOT_DIR}/*.cpp)
+target_compile_options(imgui PRIVATE -fPIC)
 
-# 4. Сборка исполняемого файла
-add_executable(ofdm_visualizer 
-    main.cpp 
-    ${IMGUI_SOURCES} 
-    ${IMPLOT_SOURCES})
+# === Линковка зависимостей для imgui ===
+target_link_libraries(imgui PUBLIC 
+    ${SDL2_LIBRARIES}
+    ${OPENGL_LIBRARIES}
+    ${GLEW_LIBRARIES}
+)
 
-# 5. Настройка заголовков
-target_include_directories(ofdm_visualizer PRIVATE 
-    ${IMGUI_DIR} 
-    ${IMGUI_DIR}/backends 
-    ${IMPLOT_DIR}
-    ${FFTW3_INCLUDE_DIRS})  # Пути от pkg-config
+# === ImPlot ===
+add_library(implot STATIC
+    ${THIRD_PARTY_DIR}/implot/implot.cpp
+    ${THIRD_PARTY_DIR}/implot/implot_demo.cpp
+    ${THIRD_PARTY_DIR}/implot/implot_items.cpp
+)
+target_include_directories(implot PUBLIsC ${THIRD_PARTY_DIR}/implot)
+target_link_libraries(implot PUBLIC imgui)  # ← PUBLIC для передачи зависимостей
+target_compile_options(implot PRIVATE -fPIC)
 
-# 6. Линковка библиотек
-target_link_libraries(ofdm_visualizer PRIVATE 
-    glfw 
+# === Основной исполняемый файл ===
+add_executable(main ${SRC_DIR}/main.cpp)
+
+target_include_directories(main PRIVATE 
+    ${INCLUDE_DIR}
+    ${FFTW3_INCLUDE_DIRS}
+)
+
+target_link_libraries(main PRIVATE 
+    imgui 
+    implot 
+    ${SDL2_LIBRARIES} 
     ${OPENGL_LIBRARIES} 
-    ${FFTW3_LIBRARIES}    # Библиотеки от pkg-config
-    m 
-    dl)
+    ${GLEW_LIBRARIES} 
+    ${FFTW3_LIBRARIES}
+    pthread m  # ← pthread и math для Linux
+)
 
-# 7. Определение версии OpenGL для ImGui
-target_compile_definitions(ofdm_visualizer PRIVATE 
-    IMGUI_IMPL_OPENGL_LOADER_GLAD=1)
+target_link_directories(main PRIVATE ${FFTW3_LIBRARY_DIRS})
