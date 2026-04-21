@@ -94,6 +94,19 @@ std::vector<CD> ZadoffChu(int U){
     return d;
 }
 
+std::vector<CD> fft_shift(std::vector<CD>& arrayOFDM) {
+    std::vector<CD> shiftedArr(arrayOFDM.size());
+    int n = arrayOFDM.size();
+    int mid = (n + 1) / 2;
+
+    for(int i = 0; i < n; i++){
+        shiftedArr[i] = arrayOFDM[(i + mid) % n];
+
+    }
+
+    return arrayOFDM;
+}
+
 /*
 * NID - PSS type
 */
@@ -109,5 +122,5 @@ std::vector<CD> PSS(size_t NID) {
         pssArr = ZadoffChu(34);
     }
 
-    return pssArr;
+
 }
