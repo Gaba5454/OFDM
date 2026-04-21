@@ -1,0 +1,84 @@
+// ofdm.cpp
+#include "const.h"
+
+using ComplexSymbol = std::complex<double>;
+
+std::vector<ComplexSymbol> OFDM(const std::vector<ComplexSymbol>& in_sym) {
+
+    /* 
+    *  Нули
+    *  С 0 по 27, на 64, с 101 по 127 
+    */
+    /* 
+    *  Пилоты
+    *  28, 38, 48, 58, 68, 78, 88, 98
+    */
+
+
+    fftw_complex* in = (fftw_complex*)fftw_malloc(sizeof(fftw_complex) * LTE);
+    fftw_complex* out = (fftw_complex*)fftw_malloc(sizeof(fftw_complex) * LTE);
+
+    for(size_t i = 0; i < LTE; ++i) {
+        in[i][0] = 0.0;
+        in[i][1] = 0.0;
+    }
+
+    size_t sym_idx = 0; 
+
+    // Левая часть
+    for (size_t i = 28; i <= 63 && sym_idx < in_sym.size(); ++i) {
+        if (i == 28 || i == 38 || i == 48 || i == 58) {
+            in[i][0] = 0.707;
+            in[i][1] = 0.707;
+            continue;
+        }
+        if (sym_idx < in_sym.size()) {
+            in[i][0] = in_sym[sym_idx].real();
+            in[i][1] = in_sym[sym_idx].imag();
+            ++sym_idx; 
+        } else {
+            // Если данные кончились — явно зануляем
+            in[i][0] = 0.0;
+            in[i][1] = 0.0;
+        }
+    }
+
+    // Правая часть
+    for (size_t i = 65; i <= 100 && sym_idx < in_sym.size(); ++i) {
+        if (i == 68 || i == 78 || i == 88 || i == 98) {
+            in[i][0] = 0.707;
+            in[i][1] = 0.707;
+            continue;
+        }
+        if (sym_idx < in_sym.size()) {
+            in[i][0] = in_sym[sym_idx].real();
+            in[i][1] = in_sym[sym_idx].imag();
+            ++sym_idx; 
+        } else {
+            // Если данные кончились — явно зануляем
+            in[i][0] = 0.0;
+            in[i][1] = 0.0;
+        }
+    }
+    fftw_plan plan = fftw_plan_dft_1d(
+                                      LTE, 
+                                      in, 
+                                      out,
+                                      FFTW_BACKWARD,
+                                      FFTW_ESTIMATE
+                                    );
+    
+    fftw_execute(plan);
+
+    std::vector<ComplexSymbol> out_sig(LTE);
+    for(size_t i = 0; i < LTE; ++i){
+        out_sig[i] = ComplexSymbol(out[i][0],
+                                   out[i][1]);
+    }
+
+    fftw_destroy_plan(plan);
+    fftw_free(in);
+    fftw_free(out);
+
+    return out_sig;
+}
