@@ -10,7 +10,8 @@
 #include <random> 
 #include <cstdint>
 
+const std::complex<double> j(1,0);
 constexpr uint8_t LTE = 128;
 
-using ComplexSymbol = std::complex<double>;
+using CD = std::complex<double>;
 #endif
