@@ -88,6 +88,3 @@ endif()
 target_compile_definitions(${PROJECT_NAME} PRIVATE
     IMGUI_IMPL_OPENGL_LOADER_GLEW
 )
-
-sudo apt update
-sudo apt install libsdl2-dev libglew-dev libgl1-mesa-dev libfftw3-dev
