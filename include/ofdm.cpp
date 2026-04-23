@@ -1,9 +1,9 @@
 // ofdm.cpp
 #include "const.h"
 
-using ComplexSymbol = std::complex<double>;
+using CD = std::complex<double>;
 
-std::vector<ComplexSymbol> OFDM(const std::vector<ComplexSymbol>& in_sym) {
+std::vector<CD> OFDM(const std::vector<CD>& in_sym) {
 
     /* 
     *  Нули
@@ -70,10 +70,10 @@ std::vector<ComplexSymbol> OFDM(const std::vector<ComplexSymbol>& in_sym) {
     
     fftw_execute(plan);
 
-    std::vector<ComplexSymbol> out_sig(LTE);
+    std::vector<CD> out_sig(LTE);
     for(size_t i = 0; i < LTE; ++i){
-        out_sig[i] = ComplexSymbol(out[i][0],
-                                   out[i][1]);
+        out_sig[i] = CD(out[i][0],
+                        out[i][1]);
     }
 
     fftw_destroy_plan(plan);
