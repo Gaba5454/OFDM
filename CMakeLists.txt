@@ -1,74 +1,93 @@
-cmake_minimum_required(VERSION 3.14)
-project(backend_notes)
+cmake_minimum_required(VERSION 3.16)
+project(OFDM CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-set(THIRD_PARTY_DIR ${PROJECT_SOURCE_DIR}/third_party)
-set(SRC_DIR ${PROJECT_SOURCE_DIR}/src)
-set(INCLUDE_DIR ${PROJECT_SOURCE_DIR}/include)
-
 # === Зависимости ===
-find_package(SDL2 REQUIRED)
 find_package(OpenGL REQUIRED)
+find_package(SDL2 REQUIRED)
 find_package(GLEW REQUIRED)
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(FFTW3 REQUIRED fftw3)
 
-# === ImGui (с бэкендами) ===
-add_library(imgui STATIC
-    ${THIRD_PARTY_DIR}/imgui/imgui.cpp
-    ${THIRD_PARTY_DIR}/imgui/imgui_draw.cpp
-    ${THIRD_PARTY_DIR}/imgui/imgui_demo.cpp
-    ${THIRD_PARTY_DIR}/imgui/imgui_tables.cpp
-    ${THIRD_PARTY_DIR}/imgui/imgui_widgets.cpp
-    ${THIRD_PARTY_DIR}/imgui/backends/imgui_impl_sdl2.cpp
-    ${THIRD_PARTY_DIR}/imgui/backends/imgui_impl_opengl3.cpp
+if(WIN32)
+    message(WARNING "FFTW3 not auto-detected on Windows. Please set FFTW3_INCLUDE_DIR and FFTW3_LIBRARY manually.")
+else()
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(FFTW3 REQUIRED fftw3)
+endif()
+
+# === Пути к третьим сторонам ===
+set(IMGUI_DIR "${CMAKE_SOURCE_DIR}/third_party/imgui")
+set(IMPLOT_DIR "${CMAKE_SOURCE_DIR}/third_party/implot")
+
+# === Исходники ImGui ===
+file(GLOB IMGUI_SOURCES
+    ${IMGUI_DIR}/*.cpp
+    ${IMGUI_DIR}/backends/imgui_impl_sdl2.cpp
+    ${IMGUI_DIR}/backends/imgui_impl_opengl3.cpp
 )
 
-target_include_directories(imgui PUBLIC 
-    ${THIRD_PARTY_DIR}/imgui
-    ${THIRD_PARTY_DIR}/imgui/backends
-    ${SDL2_INCLUDE_DIRS}        # ← ДОБАВЛЕНО: пути к заголовкам SDL2
-    ${OPENGL_INCLUDE_DIR}       # ← ДОБАВЛЕНО: для OpenGL-бэкенда
-    ${GLEW_INCLUDE_DIRS}        # ← ДОБАВЛЕНО: если используется GLEW
+# === Исходники ImPlot ===
+file(GLOB IMPLOT_SOURCES
+    ${IMPLOT_DIR}/*.cpp
 )
 
-target_compile_options(imgui PRIVATE -fPIC)
+# === Исходники проекта ===
+set(PROJECT_SOURCES
+    src/main.cpp
+    src/gui.cpp
+    include/functions.cpp
+    include/modulations.cpp
+    include/ofdm.cpp
+)
 
-# === Линковка зависимостей для imgui ===
-target_link_libraries(imgui PUBLIC 
-    ${SDL2_LIBRARIES}
+# === Создаём исполняемый файл ===
+add_executable(${PROJECT_NAME}
+    ${PROJECT_SOURCES}
+    ${IMGUI_SOURCES}
+    ${IMPLOT_SOURCES}
+)
+
+# === Include directories ===
+target_include_directories(${PROJECT_NAME} PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${IMGUI_DIR}
+    ${IMGUI_DIR}/backends
+    ${IMPLOT_DIR}
+    ${SDL2_INCLUDE_DIRS}
+    ${GLEW_INCLUDE_DIRS}
+)
+
+# Добавляем FFTW3 includes
+if(WIN32)
+    target_include_directories(${PROJECT_NAME} PRIVATE ${FFTW3_INCLUDE_DIR})
+else()
+    target_include_directories(${PROJECT_NAME} PRIVATE ${FFTW3_INCLUDE_DIRS})
+endif()
+
+# === Линковка ===
+target_link_libraries(${PROJECT_NAME} PRIVATE
     ${OPENGL_LIBRARIES}
+    ${SDL2_LIBRARIES}
     ${GLEW_LIBRARIES}
 )
 
-# === ImPlot ===
-add_library(implot STATIC
-    ${THIRD_PARTY_DIR}/implot/implot.cpp
-    ${THIRD_PARTY_DIR}/implot/implot_demo.cpp
-    ${THIRD_PARTY_DIR}/implot/implot_items.cpp
-)
-target_include_directories(implot PUBLIsC ${THIRD_PARTY_DIR}/implot)
-target_link_libraries(implot PUBLIC imgui)  # ← PUBLIC для передачи зависимостей
-target_compile_options(implot PRIVATE -fPIC)
+# Линкуем FFTW3
+if(WIN32)
+    target_link_libraries(${PROJECT_NAME} PRIVATE ${FFTW3_LIBRARY})
+else()
+    target_link_libraries(${PROJECT_NAME} PRIVATE ${FFTW3_LIBRARIES})
+endif()
 
-# === Основной исполняемый файл ===
-add_executable(main ${SRC_DIR}/main.cpp)
+# Дополнительные библиотеки для Linux
+if(UNIX AND NOT APPLE)
+    target_link_libraries(${PROJECT_NAME} PRIVATE pthread m)
+endif()
 
-target_include_directories(main PRIVATE 
-    ${INCLUDE_DIR}
-    ${FFTW3_INCLUDE_DIRS}
-)
-
-target_link_libraries(main PRIVATE 
-    imgui 
-    implot 
-    ${SDL2_LIBRARIES} 
-    ${OPENGL_LIBRARIES} 
-    ${GLEW_LIBRARIES} 
-    ${FFTW3_LIBRARIES}
-    pthread m  # ← pthread и math для Linux
+# === Дефайны для ImGui ===
+target_compile_definitions(${PROJECT_NAME} PRIVATE
+    IMGUI_IMPL_OPENGL_LOADER_GLEW
 )
 
-target_link_directories(main PRIVATE ${FFTW3_LIBRARY_DIRS})
+sudo apt update
+sudo apt install libsdl2-dev libglew-dev libgl1-mesa-dev libfftw3-dev

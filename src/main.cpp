@@ -2,45 +2,39 @@
 #include "../include/functions.h"
 #include "../include/modulations.h"
 #include "../include/ofdm.h"
+#include "../include/gui.h"
+#include <iostream>
 
 int main() {
 
+        // Enter here your text
         std::string text = "BUREAU1440";
-        std::cout << "Исходный текст: \"" << text << "\"" << std::endl;
-        std::cout << "Длина: " << text.size() << " символов = " << text.size() * 8 << " бит" << std::endl;
-        
+
+        // Transform string into bits
         std::vector<int8_t> raw_bits = string_to_bits(text);
-        
-        std::cout << "\nБиты: ";
-        for (size_t i = 0; i < text.size() * 8; i++) {
-            std::cout << (int)raw_bits[i];
-        }
-        std::cout << std::endl;
-        
-        std::vector<ComplexSymbol> symbols = QPSK(raw_bits);
+
+        // Mapping symbols
+        std::vector<CD> symbols = QPSK(raw_bits);
         int count = 0;
-        std::cout << "\nСимволы: ";
-        for (size_t i = 0; i < symbols.size(); i++) {
-            std::cout << (ComplexSymbol)symbols[i];
-            count++;
+
+        // Create PSS
+        std::vector<CD> pssSignal = PSS(1);
+
+        // Create OFDM-symbol
+        std::vector<CD> ofdm_symbols = OFDM(symbols);
+
+
+        // Add cycle prefix
+        const size_t CP_LENGTH = 20;  // Length of the CP ~1/12 on 128 symbols
+        std::vector<CD> ofdm_with_cp = cyclicPrefix(ofdm_symbols, CP_LENGTH);
+
+        // Make PSS and OFDM-symbol Tx
+        size_t iter = 2;
+        for(int i = 0; i < 2; i++){
+
         }
-        std::cout << std::endl << "Всего символов: " << count;
-        std::cout << std::endl;
 
-        std::vector<ComplexSymbol> ofdm_symbols = OFDM(symbols);
-        int count1 = 0;
-        std::cout << "\nОБПФ: ";
-        for (size_t i = 0; i < ofdm_symbols.size(); i++) {
-            std::cout << (ComplexSymbol)ofdm_symbols[i];
-            count1++;
-        }
-        std::cout << std::endl << count1;
-        std::cout << std::endl;
-
-        // === Добавление циклического префикса ===
-        const size_t CP_LENGTH = 20;  // ~1/12 от 128
-        std::vector<ComplexSymbol> ofdm_with_cp = cyclicPrefix(ofdm_symbols, CP_LENGTH);
-        std::cout << "\n✓ Символ с циклическим префиксом: " << ofdm_with_cp.size() << " отсчётов" << std::endl;
-
-       return 0;
+        // Visualization
+        run_gui(text, raw_bits, symbols, pssSignal, ofdm_symbols, ofdm_with_cp);
+        return 0;
 }
