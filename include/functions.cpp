@@ -79,6 +79,9 @@ std::vector<CD> channelSimulation(const std::vector<CD>& arrayForTx, size_t arr_
     return result;
 }
 
+/*
+* Generate PSS with ZadoffChu algorithm
+*/
 std::vector<CD> ZadoffChu(int U){
     std::vector<CD> d(62);
     double epsilon = 0.001;
@@ -94,14 +97,16 @@ std::vector<CD> ZadoffChu(int U){
     return d;
 }
 
-std::vector<CD> fft_shift(std::vector<CD>& arrayOFDM) {
+/*
+* Replace first half whith second half for correct TX power spectrum
+*/
+std::vector<CD> powerShift(std::vector<CD>& arrayOFDM) {
     std::vector<CD> shiftedArr(arrayOFDM.size());
     int n = arrayOFDM.size();
     int mid = (n + 1) / 2;
 
     for(int i = 0; i < n; i++){
         shiftedArr[i] = arrayOFDM[(i + mid) % n];
-
     }
 
     return arrayOFDM;
@@ -111,16 +116,72 @@ std::vector<CD> fft_shift(std::vector<CD>& arrayOFDM) {
 * NID - PSS type
 */
 std::vector<CD> PSS(size_t NID) {
+    /*  Нули
+    *   С 0 по 31, на 64, с 96 по 127 
+    */
+
     std::vector<CD> pssArr;
-    if(NID == 0) {
-        pssArr = ZadoffChu(25);
+    if      (NID == 0) {
+            pssArr = ZadoffChu(25);
     }
     else if (NID == 1) {
-        pssArr = ZadoffChu(29);
+            pssArr = ZadoffChu(29);
     }
     else if (NID == 2) {
-        pssArr = ZadoffChu(34);
+            pssArr = ZadoffChu(34);
+    }
+    std::vector<CD> shift_pssArr = powerShift(pssArr);
+
+    fftw_complex* in = (fftw_complex*)fftw_malloc(sizeof(fftw_complex) * LTE);
+    fftw_complex* out = (fftw_complex*)fftw_malloc(sizeof(fftw_complex) * LTE);
+
+    size_t sym_idx = 0; 
+
+    // Левая часть
+    for (size_t i = 31; i <= 63 && sym_idx < LTE; ++i) {
+        if (sym_idx < shift_pssArr.size()) {
+            in[i][0] = shift_pssArr[sym_idx].real();
+            in[i][1] = shift_pssArr[sym_idx].imag();
+            ++sym_idx; 
+        } else {
+            // Если данные кончились — явно зануляем
+            in[i][0] = 0.0;
+            in[i][1] = 0.0;
+        }
     }
 
+    // Правая часть
+    for (size_t i = 65; i <= 96 && sym_idx < shift_pssArr.size(); ++i) {
 
+        if (sym_idx < shift_pssArr.size()) {
+            in[i][0] = shift_pssArr[sym_idx].real();
+            in[i][1] = shift_pssArr[sym_idx].imag();
+            ++sym_idx; 
+        } else {
+            // Если данные кончились — явно зануляем
+            in[i][0] = 0.0;
+            in[i][1] = 0.0;
+        }
+    }
+    fftw_plan plan = fftw_plan_dft_1d(
+                                      LTE, 
+                                      in, 
+                                      out,
+                                      FFTW_BACKWARD,
+                                      FFTW_ESTIMATE
+                                    );
+    
+    fftw_execute(plan);
+
+    std::vector<CD> out_sig(LTE);
+    for(size_t i = 0; i < LTE; ++i){
+        out_sig[i] = CD(out[i][0],
+                        out[i][1]);
+    }
+
+    fftw_destroy_plan(plan);
+    fftw_free(in);
+    fftw_free(out);
+
+    return out_sig;
 }
