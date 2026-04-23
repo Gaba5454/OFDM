@@ -2,6 +2,6 @@
 #define OFDM_H
 #include "const.h" 
 
-std::vector<ComplexSymbol> OFDM(const std::vector<ComplexSymbol>& in_sym);
+std::vector<CD> OFDM(const std::vector<CD>& in_sym);
 
 #endif
