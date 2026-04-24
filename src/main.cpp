@@ -25,16 +25,25 @@ int main() {
 
 
         // Add cycle prefix
-        const size_t CP_LENGTH = 20;  // Length of the CP ~1/12 on 128 symbols
         std::vector<CD> ofdm_with_cp = cyclicPrefix(ofdm_symbols, CP_LENGTH);
+        std::vector<CD> pss_with_cp = cyclicPrefix(pssSignal, CP_LENGTH);
 
         // Make PSS and OFDM-symbol Tx
-        size_t iter = 2;
-        for(int i = 0; i < 2; i++){
+        size_t iter = 10; 
+        std::vector<CD> array_for_tx;
+        array_for_tx.reserve(iter * LTE+CP_LENGTH);
 
+        // Cycle construct array for TX
+        for(int i = 0; i < iter; i++){
+                if (i % 5 == 0){
+                        array_for_tx.insert(array_for_tx.end(), pss_with_cp.begin(), pss_with_cp.end());
+                }
+                else {
+                        array_for_tx.insert(array_for_tx.end(), ofdm_with_cp.begin(), ofdm_with_cp.end());
+                }
         }
 
         // Visualization
-        run_gui(text, raw_bits, symbols, pssSignal, ofdm_symbols, ofdm_with_cp);
+        run_gui(text, raw_bits, symbols, pssSignal, ofdm_symbols, ofdm_with_cp, array_for_tx);
         return 0;
 }
