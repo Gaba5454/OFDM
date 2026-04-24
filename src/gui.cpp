@@ -159,13 +159,30 @@ void run_gui(
         if (ImPlot::BeginPlot("Final Tx Signal")) {
             std::vector<double> x_cp(ofdm_cp_real.size());
             std::iota(x_cp.begin(), x_cp.end(), 0);
-            ImPlot::PlotShaded("Signal (Real)", x_cp.data(), ofdm_cp_real.data(), x_cp.size());
+            ImPlot::PlotLine("Real Part with CP", x_cp.data(), ofdm_cp_real.data(), x_cp.size());
             
             // Визуальная метка конца CP
             size_t cp_len = ofdm_with_cp.size() - ofdm_symbols.size();
             if(cp_len > 0 && cp_len < x_cp.size()) {
                  double v_line_x = static_cast<double>(cp_len);
-                ImPlot::PlotInfLines("CP End", &v_line_x, 1); // ← замени PlotVLines на PlotInfLines
+                ImPlot::PlotInfLines("CP End", &v_line_x, 1); // 
+            }
+            ImPlot::EndPlot();
+        }
+        ImGui::End();
+
+        // --- Окно 7: TX array ---
+        ImGui::Begin("TX array");
+        if (ImPlot::BeginPlot("Final Tx Signal")) {
+            std::vector<double> x_cp(ofdm_cp_real.size());
+            std::iota(x_cp.begin(), x_cp.end(), 0);
+            ImPlot::PlotLine("Real Part with CP", x_cp.data(), ofdm_cp_real.data(), x_cp.size());
+            
+            // Визуальная метка конца CP
+            size_t cp_len = ofdm_with_cp.size() - ofdm_symbols.size();
+            if(cp_len > 0 && cp_len < x_cp.size()) {
+                 double v_line_x = static_cast<double>(cp_len);
+                ImPlot::PlotInfLines("CP End", &v_line_x, 1); // 
             }
             ImPlot::EndPlot();
         }
