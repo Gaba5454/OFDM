@@ -186,9 +186,9 @@ std::vector<CD> PSS(size_t NID) {
     return out_sig;
 }
 
-std::vector<CD> correlation(std::vector<CD>& RxArray, std::vector<CD>& PSS) {
+std::vector<double> correlation(const std::vector<CD>& RxArray, const std::vector<CD>& PSS) {
 
-    std::vector<CD> corrArr;
+    std::vector<double> corrArr;
     size_t len_rx = RxArray.size();
     size_t len_pss = PSS.size();
     corrArr.reserve(len_rx - len_pss + 1);
