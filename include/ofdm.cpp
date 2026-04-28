@@ -14,6 +14,7 @@ std::vector<CD> OFDM(const std::vector<CD>& in_sym) {
     *  28, 38, 48, 58, 68, 78, 88, 98
     */
 
+    std::vector<size_t> ind_pilots{28, 38, 48, 58, 68, 78, 88, 98};
 
     fftw_complex* in = (fftw_complex*)fftw_malloc(sizeof(fftw_complex) * LTE);
     fftw_complex* out = (fftw_complex*)fftw_malloc(sizeof(fftw_complex) * LTE);
@@ -25,11 +26,15 @@ std::vector<CD> OFDM(const std::vector<CD>& in_sym) {
 
     size_t sym_idx = 0; 
 
-    // Левая часть
-    for (size_t i = 28; i <= 63 && sym_idx < in_sym.size(); ++i) {
-        if (i == 28 || i == 38 || i == 48 || i == 58) {
-            in[i][0] = 0.707;
-            in[i][1] = 0.707;
+    // Add pilots in symbol
+    for(size_t i : ind_pilots) {
+                in[i][0] = 0.707;
+                in[i][1] = 0.707;
+    }
+    
+    // Add data in symbol
+    for (size_t i = 28; i <= 100 && sym_idx < in_sym.size(); ++i) {
+        if(i == 64){
             continue;
         }
         if (sym_idx < in_sym.size()) {
@@ -43,23 +48,6 @@ std::vector<CD> OFDM(const std::vector<CD>& in_sym) {
         }
     }
 
-    // Правая часть
-    for (size_t i = 65; i <= 100 && sym_idx < in_sym.size(); ++i) {
-        if (i == 68 || i == 78 || i == 88 || i == 98) {
-            in[i][0] = 0.707;
-            in[i][1] = 0.707;
-            continue;
-        }
-        if (sym_idx < in_sym.size()) {
-            in[i][0] = in_sym[sym_idx].real();
-            in[i][1] = in_sym[sym_idx].imag();
-            ++sym_idx; 
-        } else {
-            // Если данные кончились — явно зануляем
-            in[i][0] = 0.0;
-            in[i][1] = 0.0;
-        }
-    }
     fftw_plan plan = fftw_plan_dft_1d(
                                       LTE, 
                                       in, 

@@ -43,10 +43,16 @@ int main() {
                 }
         }
 
+        // Correlation
+        std::vector<CD> corr_arr(correlation(array_for_tx, pssSignal));
+        size_t peak_pos = 0;
+        if (!corr_arr.empty()) {
+                peak_pos = std::distance(corr_arr.begin(), std::max_element(corr_arr.begin(), corr_arr.end()));
+        }
+        
         // Visualization
-        run_gui(text, raw_bits, symbols, pssSignal, ofdm_symbols, ofdm_with_cp, array_for_tx);
+        run_gui(text, raw_bits, symbols, pssSignal, ofdm_symbols, ofdm_with_cp, array_for_tx, corr_arr, peak_pos);
         return 0;
 }
 
 
-// Спросить про корреляцию, синзронизацию и зачем нужно две синхронизации по времени

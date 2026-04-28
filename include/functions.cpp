@@ -197,19 +197,9 @@ std::vector<CD> correlation(std::vector<CD>& RxArray, std::vector<CD>& PSS) {
         CD sum(0.0, 0.0);
 
         for (size_t n = 0; n < len_pss; ++n) {
-            sum += RxArray[n+k]+std::conj(PSS[n]);
+            sum += RxArray[n+k]*std::conj(PSS[n]);
         }
         corrArr.push_back(std::abs(sum));
     }
     return corrArr;
-}
-
-std::vector<size_t> findPeaks(const std::vector<double>& corrArr, double threshold) {
-    std::vector<size_t> peaks;
-    for(size_t i = 1; i < corrArr.size() - 1; ++i) {
-        if (corrArr[i] > corrArr[i-1] && corrArr[i] > corrArr[i+1] && corrArr[i] > threshold) {
-            peaks.push_back(i);
-        }
-    }
-    return peaks;
 }

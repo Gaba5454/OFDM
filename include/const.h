@@ -10,6 +10,7 @@
 #include <fstream>
 #include <random> 
 #include <cstdint>
+#include <algorithm>
 
 static const std::complex<double> j(0.0, 1.0);
 
