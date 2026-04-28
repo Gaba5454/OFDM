@@ -33,7 +33,7 @@ int main() {
         std::vector<CD> array_for_tx;
         array_for_tx.reserve(iter * LTE+CP_LENGTH);
 
-        // Cycle construct array for TX
+        // Array creation cycle on TX
         for(int i = 0; i < iter; i++){
                 if (i % 5 == 0){
                         array_for_tx.insert(array_for_tx.end(), pss_with_cp.begin(), pss_with_cp.end());
@@ -47,3 +47,6 @@ int main() {
         run_gui(text, raw_bits, symbols, pssSignal, ofdm_symbols, ofdm_with_cp, array_for_tx);
         return 0;
 }
+
+
+// Спросить про корреляцию, синзронизацию и зачем нужно две синхронизации по времени

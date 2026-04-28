@@ -18,13 +18,15 @@ void complex_to_vectors(const std::vector<CD>& in, std::vector<double>& out_real
     }
 }
 
+
 void run_gui(
     const std::string& original_text,
     const std::vector<int8_t>& raw_bits,
     const std::vector<CD>& qpsk_symbols,
     const std::vector<CD>& pss_signal,
     const std::vector<CD>& ofdm_symbols,
-    const std::vector<CD>& ofdm_with_cp) 
+    const std::vector<CD>& ofdm_with_cp,
+    const std::vector<CD>& tx_array) 
 {
     // 1. Инициализация SDL и OpenGL
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0) {
@@ -81,6 +83,8 @@ void run_gui(
     std::vector<double> pss_real, pss_imag;
     complex_to_vectors(pss_signal, pss_real, pss_imag);
 
+    std::vector<double> tx_real, tx_imag;
+    complex_to_vectors(tx_array, tx_real, tx_imag);
     // Главный цикл
     bool running = true;
     while (running) {
@@ -171,30 +175,28 @@ void run_gui(
         }
         ImGui::End();
 
-        // --- Окно 7: TX array ---
-        ImGui::Begin("TX array");
-        if (ImPlot::BeginPlot("Final Tx Signal")) {
-            std::vector<double> x_cp(ofdm_cp_real.size());
-            std::iota(x_cp.begin(), x_cp.end(), 0);
-            ImPlot::PlotLine("Real Part with CP", x_cp.data(), ofdm_cp_real.data(), x_cp.size());
-            
-            // Визуальная метка конца CP
-            size_t cp_len = ofdm_with_cp.size() - ofdm_symbols.size();
-            if(cp_len > 0 && cp_len < x_cp.size()) {
-                 double v_line_x = static_cast<double>(cp_len);
-                ImPlot::PlotInfLines("CP End", &v_line_x, 1); // 
-            }
+        // --- Окно 7: Tx array ---
+        ImGui::Begin("6. Tx");
+        if (ImPlot::BeginPlot("TX array")) {
+            std::vector<double> x_tx(tx_array.size());
+            std::iota(x_tx.begin(), x_tx.end(), 0);
+            ImPlot::PlotLine("Real", x_tx.data(), tx_real.data(), x_tx.size());
+            ImPlot::PlotLine("Imag", x_tx.data(), tx_imag.data(), x_tx.size());
             ImPlot::EndPlot();
         }
         ImGui::End();
 
-        // Рендер
+
         ImGui::Render();
+
         glClearColor(0.1f, 0.1f, 0.15f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
+
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
         SDL_GL_SwapWindow(window);
     }
+
 
     // Очистка
     ImGui_ImplOpenGL3_Shutdown();
@@ -204,4 +206,5 @@ void run_gui(
     SDL_GL_DeleteContext(gl_context);
     SDL_DestroyWindow(window);
     SDL_Quit();
+
 }

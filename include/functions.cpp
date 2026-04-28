@@ -185,3 +185,7 @@ std::vector<CD> PSS(size_t NID) {
 
     return out_sig;
 }
+
+std::vector<CD> correlation(std::vector<CD>& RxArray, std::vector<CD>& PSS) {
+    
+}

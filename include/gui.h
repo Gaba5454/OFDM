@@ -12,7 +12,7 @@ void run_gui(
     const std::vector<CD>& pss_signal,
     const std::vector<CD>& ofdm_symbols,
     const std::vector<CD>& ofdm_with_cp,
-    const std::vector<CD>& array_for_tx
+    const std::vector<CD>& tx_array
 );
 
 #endif 
