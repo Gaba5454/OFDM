@@ -3,13 +3,12 @@
 #include "../include/ofdm.h"
 #include "../include/gui.h"
 #include <iostream>
-#include <algorithm> // Для std::max_element
+#include <algorithm>
 #include <vector>
-
+const size_t iter = 1; 
 
 
 int main() {
-    try {
         // 1. Входные данные
         std::string text = "BUREAU1440";
         std::cout << "Processing text: \"" << text << "\"" << std::endl;
@@ -31,11 +30,8 @@ int main() {
         std::vector<CD> pss_with_cp = cyclicPrefix(pssSignal, CP_LENGTH);
 
         // 7. Формирование полного кадра передачи (Tx Array)
-        size_t iter = 10; 
         std::vector<CD> array_for_tx;
-        // Резервируем память заранее для производительности
         array_for_tx.reserve(iter * (LTE + CP_LENGTH));
-
         for(int i = 0; i < iter; i++){
             if (i % 5 == 0){
                 // Вставляем PSS каждые 5 символов
@@ -48,10 +44,9 @@ int main() {
         }
 
         // 8. Синхронизация: Корреляция для поиска PSS
-        // Функция correlation теперь возвращает std::vector<double> (модули корреляции)
-        std::vector<double> corr_map = correlation(array_for_tx, pssSignal);
+        std::vector<double> corr_map = correlationPSS(array_for_tx, pssSignal);
 
-        // Находим позицию максимального пика
+
         size_t peak_pos = 0;
         if (!corr_map.empty()) {
             auto max_it = std::max_element(corr_map.begin(), corr_map.end());
@@ -75,10 +70,6 @@ int main() {
             peak_pos            // peak_position 
         );
 
-    } catch (const std::exception& e) {
-        std::cerr << "Critical Error: " << e.what() << std::endl;
-        return 1;
-    }
 
     return 0;
 }

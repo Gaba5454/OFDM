@@ -61,8 +61,8 @@ void run_gui(
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     // Опционально: темная тема сразу
-    ImGui::StyleColorsDark();
-    ImPlot::StyleColorsDark();
+    ImGui::StyleColorsClassic();
+    ImPlot::StyleColorsClassic();
 
     ImGui_ImplSDL2_InitForOpenGL(window, gl_context);
     ImGui_ImplOpenGL3_Init("#version 330");
