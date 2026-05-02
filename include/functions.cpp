@@ -186,7 +186,7 @@ std::vector<CD> PSS(size_t NID) {
     return out_sig;
 }
 
-std::vector<double> correlation(const std::vector<CD>& RxArray, const std::vector<CD>& PSS) {
+std::vector<double> correlationPSS(const std::vector<CD>& RxArray, const std::vector<CD>& PSS) {
 
     std::vector<double> corrArr;
     size_t len_rx = RxArray.size();
@@ -203,3 +203,11 @@ std::vector<double> correlation(const std::vector<CD>& RxArray, const std::vecto
     }
     return corrArr;
 }
+
+std::vector<CD> cutPSS(size_t peak_pos, std::vector<CD> array_for_tx){
+    
+    size_t symbol_length = LTE + CP_LENGTH;
+    std::vector<CD> nopss_array_for_tx;
+
+
+} 
