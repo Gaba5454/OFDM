@@ -90,11 +90,6 @@ std::cout << "Original Text: \"" << text << "\"" << std::endl;
 std::cout << "Recovered Text: \"" << clean_text << "\"" << std::endl;
 std::cout << "Match: " << (clean_text == text ? "YES" : "NO") << std::endl;
 std::cout << "----------------------------------------" << std::endl;
-// === ВИЗУАЛИЗАЦИЯ ===
-// Передаем восстановленный текст и точки созвездия в GUI
-// Тебе нужно будет обновить сигнатуру run_gui, чтобы принять эти новые данные.
-// Или просто передать decoded.constellation_points вместо старых qpsk_symbols, 
-// чтобы увидеть "реальное" принятое созвездие.
 
         // 9. Запуск визуализации
         run_gui(
