@@ -6,8 +6,8 @@
 #include <backends/imgui_impl_opengl3.h>
 #include <backends/imgui_impl_sdl2.h>
 #include <iostream>
-#include <numeric> // Для std::iota
-#include <algorithm> // Для std::max_element
+#include <numeric> 
+#include <algorithm> 
 
 // Вспомогательная функция
 void complex_to_vectors(const std::vector<CD>& in, std::vector<double>& out_real, std::vector<double>& out_imag) {
@@ -28,8 +28,11 @@ void run_gui(
     const std::vector<CD>& ofdm_with_cp,
     const std::vector<CD>& tx_array,
     const std::vector<double>& correlation_map,
-    size_t peak_position) 
-{
+    size_t peak_position,
+    const std::vector<CD>& data_after_pss,
+    const std::string& recovered_text,           
+    const std::vector<CD>& received_constellation  
+    ) {
     // 1. Инициализация SDL и OpenGL
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0) {
         std::cout << "Error: SDL_Init failed\n";
@@ -55,12 +58,13 @@ void run_gui(
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImPlot::CreateContext();
-    
+    ImPlot::StyleColorsDark();
+
     ImGuiIO& io = ImGui::GetIO();
-    // Включаем Docking (стыковку окон)
+    // Включаем Docking 
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-    // Опционально: темная тема сразу
+
     ImGui::StyleColorsClassic();
     ImPlot::StyleColorsClassic();
 
@@ -133,7 +137,7 @@ void run_gui(
         ImGui::End();
 
         // === ЛЕВАЯ ПАНЕЛЬ: ПАРАМЕТРЫ И ИНФО ===
-        // Мы "прикрепляем" это окно к левой части экрана
+        // Прикрепляем это окно к левой части экрана
         ImGui::Begin("Parameters & Info");
         
         ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "System Status: RUNNING");
@@ -249,6 +253,87 @@ void run_gui(
 
         ImGui::EndChild(); // Конец области скролла
         ImGui::End();      // Конец окна Signal Analysis
+
+        // --- Окно 9: Data Stream (After PSS) ---
+        ImGui::Begin("8. Data Stream (No PSS)");
+        
+        if (!data_after_pss.empty()) {
+            if (ImPlot::BeginPlot("Data Time Domain", ImVec2(-1, -1))) {
+                ImPlot::SetupAxes("Sample Index (relative)", "Amplitude");
+                
+                std::vector<double> x_data(data_after_pss.size());
+                std::vector<double> y_real(data_after_pss.size());
+                
+                for(size_t i=0; i<data_after_pss.size(); ++i) {
+                    x_data[i] = static_cast<double>(i);
+                    y_real[i] = data_after_pss[i].real();
+                }
+            ImPlot::GetStyle().Colors[1] = ImVec4(0.2f, 1.0f, 0.5f, 0.8f); // 1 = Line color
+                ImPlot::PlotLine("Real Part", x_data.data(), y_real.data(), x_data.size());
+                    
+                ImPlot::EndPlot();
+            }
+            
+            ImGui::Text("Total samples after 1st PSS: %zu", data_after_pss.size());
+            ImGui::Text("Approx symbols: %zu (len=%d)", data_after_pss.size() / (LTE + CP_LENGTH), LTE + CP_LENGTH);
+            
+        } else {
+            ImGui::Text("No data extracted after PSS.");
+        }
+        
+        ImGui::End();
+
+         // --- Окно 10: Decoding Result ---
+        ImGui::Begin("9. Decoding & Constellation");
+        
+        ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Status: %s", 
+                           (recovered_text == original_text ? "SUCCESS" : "FAILED"));
+        
+        ImGui::Separator();
+        ImGui::Text("Original:  \"%s\"", original_text.c_str());
+        ImGui::Text("Received:  \"%s\"", recovered_text.c_str());
+        
+        ImGui::Separator();
+        ImGui::Text("Received Constellation (All Symbols):");
+        
+        if (!received_constellation.empty()) {
+            if (ImPlot::BeginPlot("##RxConstellation", ImVec2(-1, 300))) {
+                ImPlot::SetupAxisLimits(ImAxis_X1, -1.5, 1.5);
+                ImPlot::SetupAxisLimits(ImAxis_Y1, -1.5, 1.5);
+                
+
+                ImPlotStyle& ps = ImPlot::GetStyle();
+                ps.Colors[0] = ImVec4(0.1f, 0.1f, 0.15f, 1.0f); 
+                ps.Colors[1] = ImVec4(0.2f, 0.2f, 0.25f, 1.0f); 
+                ps.Colors[2] = ImVec4(0.0f, 1.0f, 1.0f, 0.8f);  
+  
+
+                std::vector<double> rx_i, rx_q;
+                size_t points_to_show = std::min(received_constellation.size(), size_t(40));
+                
+                for(size_t k=0; k < points_to_show; ++k) {
+                    rx_i.push_back(received_constellation[k].real());
+                    rx_q.push_back(received_constellation[k].imag());
+                }
+                
+                // Рисуем принятые точки (используем индекс 2, который мы задали выше как Cyan)
+                ImPlot::PlotScatter("Rx Points", rx_i.data(), rx_q.data(), rx_i.size());
+                
+                // Рисуем идеальные точки QPSK
+                std::vector<double> id_i = {0.7, -0.7, -0.7, 0.7};
+                std::vector<double> id_q = {0.7, 0.7, -0.7, -0.7};
+                
+                // Меняем цвет на красный для идеальных точек
+                ps.Colors[2] = ImVec4(1.0f, 0.0f, 0.0f, 1.0f); 
+                ImPlot::PlotScatter("Ideal", id_i.data(), id_q.data(), 4);
+
+                ImPlot::EndPlot();
+            }
+        } else {
+            ImGui::Text("No constellation data.");
+        }
+        
+        ImGui::End();
 
         // Рендеринг
         ImGui::Render();

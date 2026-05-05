@@ -5,7 +5,7 @@
 #include <iostream>
 #include <algorithm>
 #include <vector>
-const size_t iter = 1; 
+
 
 
 int main() {
@@ -19,7 +19,7 @@ int main() {
         // 3. Модуляция QPSK
         std::vector<CD> symbols = QPSK(raw_bits);
 
-        // 4. Генерация PSS (NID=1 -> root index 29)
+        // 4. Генерация PSS (NID=1 == root index 29)
         std::vector<CD> pssSignal = PSS(1);
 
         // 5. OFDM модуляция данных
@@ -46,8 +46,8 @@ int main() {
         // 8. Синхронизация: Корреляция для поиска PSS
         std::vector<double> corr_map = correlationPSS(array_for_tx, pssSignal);
 
-
-        size_t peak_pos = 0;
+        // 8.1 Вычисление индекса начала PSS
+        int peak_pos = 0;
         if (!corr_map.empty()) {
             auto max_it = std::max_element(corr_map.begin(), corr_map.end());
             peak_pos = std::distance(corr_map.begin(), max_it);
@@ -57,6 +57,45 @@ int main() {
             std::cerr << "Error: Correlation map is empty!" << std::endl;
         }
         
+        // 8.2 Обрезка полезных данных
+        std::vector<CD> extracted_data = extractDataAfterPSS(peak_pos, array_for_tx);
+
+//  =========================================
+// 9. Частотная синхронизация 
+        const size_t SYMBOL_LEN = LTE + CP_LENGTH; // 148
+
+// Сделать обработку случая если данных всего один символ
+        if (extracted_data.size() >= SYMBOL_LEN) {
+            // Вырезаем первый символ
+            std::vector<CD> first_symbol(extracted_data.begin(), extracted_data.begin() + SYMBOL_LEN);
+
+            // 2. Измеряем ошибку частоты
+            double cfo = estimate_cfo(first_symbol, LTE, CP_LENGTH);
+            
+            std::cout << "Detected Frequency Offset (normalized): " << cfo << std::endl;
+            // Если всё идеально, cfo будет близко к 0.
+            // Если есть рассинхронизация, там будет число вроде 0.001 или -0.005.
+
+            // 3. Исправляем ВЕСЬ поток данных
+            std::vector<CD> data_fixed = compensate_cfo(extracted_data, cfo);
+
+// === ДЕКОДИРОВАНИЕ ===
+DecodedResult decoded = decode_ofdm_stream(data_fixed, LTE, CP_LENGTH);
+
+// Обрезаем восстановленный текст до длины исходного
+std::string clean_text = decoded.recovered_text.substr(0, text.size());
+
+std::cout << "----------------------------------------" << std::endl;
+std::cout << "Original Text: \"" << text << "\"" << std::endl;
+std::cout << "Recovered Text: \"" << clean_text << "\"" << std::endl;
+std::cout << "Match: " << (clean_text == text ? "YES" : "NO") << std::endl;
+std::cout << "----------------------------------------" << std::endl;
+// === ВИЗУАЛИЗАЦИЯ ===
+// Передаем восстановленный текст и точки созвездия в GUI
+// Тебе нужно будет обновить сигнатуру run_gui, чтобы принять эти новые данные.
+// Или просто передать decoded.constellation_points вместо старых qpsk_symbols, 
+// чтобы увидеть "реальное" принятое созвездие.
+
         // 9. Запуск визуализации
         run_gui(
             text,               // original_text
@@ -67,8 +106,12 @@ int main() {
             ofdm_with_cp,       // ofdm_with_cp
             array_for_tx,       // tx_array
             corr_map,           // correlation_map
-            peak_pos            // peak_position 
+            peak_pos,           // peak_position 
+            extracted_data,     // extracted_data
+            decoded.recovered_text, 
+            decoded.constellation_points
         );
+    }
 
 
     return 0;

@@ -204,10 +204,198 @@ std::vector<double> correlationPSS(const std::vector<CD>& RxArray, const std::ve
     return corrArr;
 }
 
-std::vector<CD> cutPSS(size_t peak_pos, std::vector<CD> array_for_tx){
+std::vector<CD> extractDataAfterPSS(size_t peak_pos, std::vector<CD> rx_array){
     
-    size_t symbol_length = LTE + CP_LENGTH;
-    std::vector<CD> nopss_array_for_tx;
+    size_t start_of_next_block = peak_pos + LTE; // 128
+    
+    if (start_of_next_block >= rx_array.size()) {
+        return {}; 
+    }
 
+    // Возвращаем всё, что идёт после первого PSS-блока
+    std::vector<CD> data_only(
+        rx_array.begin() + start_of_next_block,
+        rx_array.end()
+    );
 
+    return data_only;
 } 
+
+// ================================================
+/**
+ * @brief Оценивает ошибку частоты (CFO) по одному OFDM символу.
+ * @param symbol_with_cp Вектор: [CP (20)] + [Data (128)]. Всего 148 элементов.
+ * @param n_fft Длина полезных данных (128).
+ * @param n_cp Длина CP (20).
+ * @return Нормированная ошибка частоты (в долях от частоты дискретизации).
+ */
+double estimate_cfo(const std::vector<CD>& symbol_with_cp, size_t n_fft, size_t n_cp) {
+
+    if (symbol_with_cp.size() < n_fft + n_cp) return 0.0;
+
+    CD sum(0.0, 0.0);
+
+    // Сравниваем i-й элемент CP с i-м элементом хвоста Data.
+    // CP лежит в индексах [0 ... n_cp-1]
+    // Хвост Data лежит в индексах [n_fft ... n_fft + n_cp - 1]
+    // Data начинается после CP (индекс n_cp), 
+    // и длится n_fft отсчётов. Конец Data = n_cp + n_fft - 1.
+    // Хвост длиной n_cp берётся с конца Data.
+    
+    // Индекс начала хвоста внутри вектора:
+    // (n_cp + n_fft) - n_cp = n_fft.
+    
+    for (size_t i = 0; i < n_cp; ++i) {
+        // Берём элемент из CP
+        CD val_cp = symbol_with_cp[i];
+        
+        // Берём соответствующий элемент из хвоста Data
+        CD val_tail = symbol_with_cp[n_fft + i];
+        
+        // Умножаем одно на сопряжённое другое, чтобы получить разность фаз
+        sum += val_cp * std::conj(val_tail);
+    }
+
+    // Находим средний угол поворота фазы
+    double angle = std::arg(sum);
+
+    // Переводим угол в частотную ошибку.
+    // Формула: CFO_norm = Angle / (2 * PI * N_FFT)
+    double cfo_normalized = angle / (2.0 * M_PI * static_cast<double>(n_fft));
+
+    return cfo_normalized;
+}
+
+/**
+ * @brief Убирает частотную ошибку из всего потока данных.
+ * @param rx_data Принятый поток данных (без PSS, только данные).
+ * @param cfo_normalized Ошибка, полученная из estimate_cfo.
+ * @return Исправленный поток данных.
+ */
+std::vector<CD> compensate_cfo(const std::vector<CD>& rx_data, double cfo_normalized) {
+    std::vector<CD> corrected(rx_data.size());
+
+    for (size_t i = 0; i < rx_data.size(); ++i) {
+        // Мы должны умножить сигнал на e^(-j * 2 * pi * CFO * t)
+        // Где t — это номер отсчёта (i).
+        
+        double phase = -2.0 * M_PI * cfo_normalized * static_cast<double>(i);
+        
+        // Создаём комплексное число для поворота фазы
+        CD correction(std::cos(phase), std::sin(phase));
+        
+        // Применяем поправку
+        corrected[i] = rx_data[i] * correction;
+    }
+
+    return corrected;
+}
+
+
+// 1. QPSK Демодулятор: Комплексное число -> 2 бита (int8_t)
+std::vector<int8_t> qpsk_demodulate_symbol(const CD& symbol) {
+    std::vector<int8_t> bits(2);
+    
+    // Вариант: Инвертируем логику (так как у тебя bit0==0 -> -1)
+    // Если real > 0, то это бит 1. Если imag > 0, то это бит 1.
+    // Но возможно, биты идут в порядке [Q, I] или наоборот.
+    
+    // Попробуем стандартный маппинг для твоего QPSK (bit0->I, bit1->Q):
+    // У тебя: bit0=0 -> I=-1. Значит, если I > 0, то bit0 должен быть 1.
+    bits[0] = (symbol.real() > 0) ? 1 : 0;
+    bits[1] = (symbol.imag() > 0) ? 1 : 0;
+    
+    return bits;
+}
+// 2. Преобразование вектора битов в строку
+std::string bits_to_string(const std::vector<int8_t>& bits) {
+    std::string text;
+    size_t num_bytes = bits.size() / 8;
+    
+    for (size_t i = 0; i < num_bytes; ++i) {
+        unsigned char byte = 0;
+        for (int b = 0; b < 8; ++b) {
+            // Сдвигаем биты. Важно: порядок битов должен совпадать с string_to_bits
+            // В string_to_bits мы брали старший бит первым (MSB first).
+            // Значит, bits[i*8 + 0] — это самый старший бит байта.
+            byte |= (bits[i * 8 + b] << (7 - b));
+        }
+        text += static_cast<char>(byte);
+    }
+    return text;
+}
+
+
+
+DecodedResult decode_ofdm_stream(const std::vector<CD>& data_fixed, size_t n_fft, size_t n_cp) {
+    DecodedResult result;
+    const size_t symbol_len = n_fft + n_cp;
+    const size_t total_symbols = data_fixed.size() / symbol_len;
+    
+    if (total_symbols == 0) return result;
+
+    // Буферы для FFTW
+    fftw_complex* in = (fftw_complex*)fftw_malloc(sizeof(fftw_complex) * n_fft);
+    fftw_complex* out = (fftw_complex*)fftw_malloc(sizeof(fftw_complex) * n_fft);
+    
+    // План FFT (прямое преобразование: время -> частота)
+    fftw_plan plan = fftw_plan_dft_1d(n_fft, in, out, FFTW_FORWARD, FFTW_ESTIMATE);
+
+    std::vector<int8_t> all_bits;
+    result.constellation_points.reserve(total_symbols * 62); // Резервируем место
+
+    for (size_t s = 0; s < total_symbols; ++s) {
+        size_t start_idx = s * symbol_len;
+        
+        // Проверка границ
+        if (start_idx + symbol_len > data_fixed.size()) break;
+
+        // --- А. Удаление CP ---
+        // Копируем только полезные данные (пропускаем первые n_cp отсчётов)
+        for (size_t k = 0; k < n_fft; ++k) {
+            in[k][0] = data_fixed[start_idx + n_cp + k].real();
+            in[k][1] = data_fixed[start_idx + n_cp + k].imag();
+        }
+
+        // --- Б. FFT ---
+        fftw_execute(plan);
+
+        // --- В. Извлечение активных поднесущих ---
+        // В LTE-like структуре активные поднесущие находятся в центре.
+        // Индексы: [32..62] и [65..95] (всего 62 штуки), пропуская DC (индекс 64).
+        // Но после FFTW индекс 0 — это DC.
+        // Нам нужно маппить индексы правильно.
+        
+        // DC находится в out[0] (или out[n_fft/2], зависит от реализации, но FFTW дает DC в [0]).
+        // Давай возьмем индексы, соответствующие тем, куда мы клали данные в OFDM().
+        // Там мы использовали индексы 32..62 и 65..95 в частотном векторе ДО IFFT.
+        // После IFFT и FFT обратно, данные вернутся на те же места.
+        
+        std::vector<size_t> active_indices;
+        for(int i=1; i<=62; ++i) active_indices.push_back(i);
+
+        for (size_t idx = 1; idx < n_fft; ++idx) { // Пропускаем только DC (индекс 0)
+     CD freq_sample(out[idx][0], out[idx][1]);
+     freq_sample /= static_cast<double>(n_fft);
+     
+     // Если амплитуда слишком мала, пропускаем (шум)
+     if (std::abs(freq_sample) < 0.1) continue; 
+
+     result.constellation_points.push_back(freq_sample);
+     std::vector<int8_t> bits = qpsk_demodulate_symbol(freq_sample);
+     all_bits.insert(all_bits.end(), bits.begin(), bits.end());
+}
+    }
+
+    // --- Г. Декодирование битов в текст ---
+    result.recovered_text = bits_to_string(all_bits);
+    result.symbols_processed = total_symbols;
+
+    // Очистка
+    fftw_destroy_plan(plan);
+    fftw_free(in);
+    fftw_free(out);
+
+    return result;
+}
+// =================================
