@@ -1,9 +1,9 @@
 // ofdm.cpp
 #include "const.h"
 
-using CD = std::complex<double>;
+using CF = std::complex<float>;
 
-std::vector<CD> OFDM(const std::vector<CD>& in_sym) {
+std::vector<CF> OFDM(const std::vector<CF>& in_sym) {
 
     /* 
     *  Нули
@@ -58,9 +58,9 @@ std::vector<CD> OFDM(const std::vector<CD>& in_sym) {
     
     fftw_execute(plan);
 
-    std::vector<CD> out_sig(LTE);
+    std::vector<CF> out_sig(LTE);
     for(size_t i = 0; i < LTE; ++i){
-        out_sig[i] = CD(out[i][0],
+        out_sig[i] = CF(out[i][0],
                                    out[i][1]);
     }
 

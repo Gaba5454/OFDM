@@ -16,13 +16,13 @@ std::vector<int8_t> string_to_bits(const std::string& text) {
 
 
 // Думаю нужно поменять алгоритм работы этой функции, чтобы она была более C подобной
-std::vector<CD> cyclicPrefix(const std::vector<CD>& symbol, size_t cp_len) {
+std::vector<CF> cyclicPrefix(const std::vector<CF>& symbol, size_t cp_len) {
 
     if(cp_len >= symbol.size()){
         throw std::invalid_argument("Длина должна быть меньше размера символа.");
     }
 
-    std::vector<CD> output;
+    std::vector<CF> output;
 
     output.reserve(symbol.size()+cp_len);
 
@@ -46,7 +46,7 @@ std::vector<CD> cyclicPrefix(const std::vector<CD>& symbol, size_t cp_len) {
 @param arr_len размер входного массива
 @return arr_channel массив данных после обработки
 */
-std::vector<CD> channelSimulation(const std::vector<CD>& arrayForTx, size_t arr_len, double noise_stddev = 1.0) {
+std::vector<CF> channelSimulation(const std::vector<CF>& arrayForTx, size_t arr_len, double noise_stddev) {
     
     size_t length = arr_len + arr_len;
     fftw_complex* arr_channel = (fftw_complex*)fftw_malloc(sizeof(fftw_complex) * length);
@@ -66,11 +66,12 @@ std::vector<CD> channelSimulation(const std::vector<CD>& arrayForTx, size_t arr_
         arr_channel[i][0] = dist(gen); // Действительная часть (Re)
         arr_channel[i][1] = dist(gen); // Мнимая часть (Im)
     }
-    std::vector<CD> result;
+    
+    std::vector<CF> result;
     result.reserve(length);
         for (size_t i = 0; i < length; ++i) {
-        // Создаём CD из действительной и мнимой части
-        // Если CD — это std::complex<double>, этот код тоже сработает
+        // Создаём CF из действительной и мнимой части
+        // Если CF — это std::complex<double>, этот код тоже сработает
         result.emplace_back(arr_channel[i][0], arr_channel[i][1]);
     }
      // 2. Освобождение памяти FFTW (обязательно!)
@@ -82,17 +83,17 @@ std::vector<CD> channelSimulation(const std::vector<CD>& arrayForTx, size_t arr_
 /*
 * Generate PSS with ZadoffChu algorithm
 */
-std::vector<CD> ZadoffChu(int U){
-    std::vector<CD> d(62);
+std::vector<CF> ZadoffChu(int U){
+    std::vector<CF> d(62);
     double epsilon = 0.001;
 
     for(size_t i = 0; i < 30; i++){
-        d[i] = exp((-j * M_PI * CD(U) * CD(i) * CD(i+1)) / CD(63));
-        if(std::abs(imag(d[i]) < epsilon)) { d[i] = CD(real(d[i]),0); }
+        d[i] = exp((-j * CF(M_PI) * CF(U) * CF(i) * CF(i+1)) / CF(63));
+        if(std::abs(imag(d[i]) < epsilon)) { d[i] = CF(real(d[i]),0); }
     }
     for(size_t i = 31; i < 61; i++){
-        d[i] = exp((-j * M_PI * CD(U) * CD(i+1) * CD(i+2)) / CD(63));
-        if(std::abs(imag(d[i]) < epsilon)) { d[i] = CD(real(d[i]),0); }
+        d[i] = exp((-j * CF(M_PI) * CF(U) * CF(i+1) * CF(i+2)) / CF(63));
+        if(std::abs(imag(d[i]) < epsilon)) { d[i] = CF(real(d[i]),0); }
     }
     return d;
 }
@@ -100,13 +101,15 @@ std::vector<CD> ZadoffChu(int U){
 /*
 * Replace first half whith second half for correct TX power spectrum
 */
-std::vector<CD> powerShift(std::vector<CD>& arrayOFDM) {
-    std::vector<CD> shiftedArr(arrayOFDM.size());
+std::vector<CF> powerShift(std::vector<CF>& arrayOFDM) {
+    std::vector<CF> shiftedArr(arrayOFDM.size());
     int n = arrayOFDM.size();
     int mid = (n + 1) / 2;
 
     for(int i = 0; i < n; i++){
+
         shiftedArr[i] = arrayOFDM[(i + mid) % n];
+    
     }
 
     return arrayOFDM;
@@ -115,12 +118,12 @@ std::vector<CD> powerShift(std::vector<CD>& arrayOFDM) {
 /*
 * NID - PSS type
 */
-std::vector<CD> PSS(size_t NID) {
+std::vector<CF> PSS(size_t NID) {
     /*  Нули
     *   С 0 по 31, на 64, с 96 по 127 
     */
 
-    std::vector<CD> pssArr;
+    std::vector<CF> pssArr;
     if      (NID == 0) {
             pssArr = ZadoffChu(25);
     }
@@ -130,7 +133,7 @@ std::vector<CD> PSS(size_t NID) {
     else if (NID == 2) {
             pssArr = ZadoffChu(34);
     }
-    std::vector<CD> shift_pssArr = powerShift(pssArr);
+    std::vector<CF> shift_pssArr = powerShift(pssArr);
 
     fftw_complex* in = (fftw_complex*)fftw_malloc(sizeof(fftw_complex) * LTE);
     fftw_complex* out = (fftw_complex*)fftw_malloc(sizeof(fftw_complex) * LTE);
@@ -173,9 +176,9 @@ std::vector<CD> PSS(size_t NID) {
     
     fftw_execute(plan);
 
-    std::vector<CD> out_sig(LTE);
+    std::vector<CF> out_sig(LTE);
     for(size_t i = 0; i < LTE; ++i){
-        out_sig[i] = CD(out[i][0],
+        out_sig[i] = CF(out[i][0],
                         out[i][1]);
     }
 
@@ -186,7 +189,7 @@ std::vector<CD> PSS(size_t NID) {
     return out_sig;
 }
 
-std::vector<double> correlationPSS(const std::vector<CD>& RxArray, const std::vector<CD>& PSS) {
+std::vector<double> correlationPSS(const std::vector<CF>& RxArray, const std::vector<CF>& PSS) {
 
     std::vector<double> corrArr;
     size_t len_rx = RxArray.size();
@@ -194,7 +197,7 @@ std::vector<double> correlationPSS(const std::vector<CD>& RxArray, const std::ve
     corrArr.reserve(len_rx - len_pss + 1);
     
     for(size_t k = 0; k <= len_rx - len_pss; ++k) {
-        CD sum(0.0, 0.0);
+        CF sum(0.0, 0.0);
 
         for (size_t n = 0; n < len_pss; ++n) {
             sum += RxArray[n+k]*std::conj(PSS[n]);
@@ -204,7 +207,7 @@ std::vector<double> correlationPSS(const std::vector<CD>& RxArray, const std::ve
     return corrArr;
 }
 
-std::vector<CD> extractDataAfterPSS(size_t peak_pos, std::vector<CD> rx_array){
+std::vector<CF> extractDataAfterPSS(size_t peak_pos, std::vector<CF> rx_array){
     
     size_t start_of_next_block = peak_pos + LTE; // 128
     
@@ -213,7 +216,7 @@ std::vector<CD> extractDataAfterPSS(size_t peak_pos, std::vector<CD> rx_array){
     }
 
     // Возвращаем всё, что идёт после первого PSS-блока
-    std::vector<CD> data_only(
+    std::vector<CF> data_only(
         rx_array.begin() + start_of_next_block,
         rx_array.end()
     );
@@ -229,11 +232,11 @@ std::vector<CD> extractDataAfterPSS(size_t peak_pos, std::vector<CD> rx_array){
  * @param n_cp Длина CP (20).
  * @return Нормированная ошибка частоты (в долях от частоты дискретизации).
  */
-double estimate_cfo(const std::vector<CD>& symbol_with_cp, size_t n_fft, size_t n_cp) {
+double estimate_cfo(const std::vector<CF>& symbol_with_cp, size_t n_fft, size_t n_cp) {
 
     if (symbol_with_cp.size() < n_fft + n_cp) return 0.0;
 
-    CD sum(0.0, 0.0);
+    CF sum(0.0, 0.0);
 
     // Сравниваем i-й элемент CP с i-м элементом хвоста Data.
     // CP лежит в индексах [0 ... n_cp-1]
@@ -247,10 +250,10 @@ double estimate_cfo(const std::vector<CD>& symbol_with_cp, size_t n_fft, size_t 
     
     for (size_t i = 0; i < n_cp; ++i) {
         // Берём элемент из CP
-        CD val_cp = symbol_with_cp[i];
+        CF val_cp = symbol_with_cp[i];
         
         // Берём соответствующий элемент из хвоста Data
-        CD val_tail = symbol_with_cp[n_fft + i];
+        CF val_tail = symbol_with_cp[n_fft + i];
         
         // Умножаем одно на сопряжённое другое, чтобы получить разность фаз
         sum += val_cp * std::conj(val_tail);
@@ -272,20 +275,26 @@ double estimate_cfo(const std::vector<CD>& symbol_with_cp, size_t n_fft, size_t 
  * @param cfo_normalized Ошибка, полученная из estimate_cfo.
  * @return Исправленный поток данных.
  */
-std::vector<CD> compensate_cfo(const std::vector<CD>& rx_data, double cfo_normalized) {
-    std::vector<CD> corrected(rx_data.size());
+std::vector<CF> compensate_cfo(const std::vector<CF>& rx_data, double cfo_normalized,
+                               size_t n_fft, size_t n_cp) {
+    std::vector<CF> corrected(rx_data.size());
+    size_t symbol_size = n_fft + n_cp;
 
-    for (size_t i = 0; i < rx_data.size(); ++i) {
-        // Мы должны умножить сигнал на e^(-j * 2 * pi * CFO * t)
-        // Где t — это номер отсчёта (i).
-        
-        double phase = -2.0 * M_PI * cfo_normalized * static_cast<double>(i);
-        
-        // Создаём комплексное число для поворота фазы
-        CD correction(std::cos(phase), std::sin(phase));
-        
-        // Применяем поправку
-        corrected[i] = rx_data[i] * correction;
+    for (size_t sym = 0; sym < rx_data.size() / symbol_size; ++sym) {
+        size_t offset = sym * symbol_size;
+
+        for(size_t i = 0; i < symbol_size; ++i){
+            // Мы должны умножить сигнал на e^(-j * 2 * pi * CFO * t)
+            // Где t — это номер отсчёта (i).
+            size_t idx = offset + i;
+            double phase = -2.0 * M_PI * cfo_normalized * static_cast<double>(i);
+            
+            // Создаём комплексное число для поворота фазы
+            CF correction(std::cos(phase), std::sin(phase));
+            
+            // Применяем поправку
+            corrected[idx] = rx_data[idx] * correction;
+        }
     }
 
     return corrected;
@@ -293,7 +302,7 @@ std::vector<CD> compensate_cfo(const std::vector<CD>& rx_data, double cfo_normal
 
 
 // 1. QPSK Демодулятор: Комплексное число -> 2 бита (int8_t)
-std::vector<int8_t> qpsk_demodulate_symbol(const CD& symbol) {
+std::vector<int8_t> qpsk_demodulate_symbol(const CF& symbol) {
     std::vector<int8_t> bits(2);
     
     // Вариант: Инвертируем логику (так как у тебя bit0==0 -> -1)
@@ -327,7 +336,7 @@ std::string bits_to_string(const std::vector<int8_t>& bits) {
 
 
 
-DecodedResult decode_ofdm_stream(const std::vector<CD>& data_fixed, size_t n_fft, size_t n_cp) {
+DecodedResult decode_ofdm_stream(const std::vector<CF>& data_fixed, size_t n_fft, size_t n_cp) {
     DecodedResult result;
     const size_t symbol_len = n_fft + n_cp;
     const size_t total_symbols = data_fixed.size() / symbol_len;
@@ -375,7 +384,7 @@ DecodedResult decode_ofdm_stream(const std::vector<CD>& data_fixed, size_t n_fft
         for(int i=1; i<=62; ++i) active_indices.push_back(i);
 
         for (size_t idx = 1; idx < n_fft; ++idx) { // Пропускаем только DC (индекс 0)
-     CD freq_sample(out[idx][0], out[idx][1]);
+     CF freq_sample(out[idx][0], out[idx][1]);
      freq_sample /= static_cast<double>(n_fft);
      
      // Если амплитуда слишком мала, пропускаем (шум)

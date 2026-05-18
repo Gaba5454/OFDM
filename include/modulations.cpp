@@ -1,14 +1,14 @@
 // modulations.cpp
 #include "const.h"
 
-std::vector<CD> QPSK(const std::vector<int8_t> &in_bits) {
+std::vector<CF> QPSK(const std::vector<int8_t> &in_bits) {
     
 // Переменная количество выходных символов
     size_t num_symbols = in_bits.size() / 2;
 
 // Объявляется переменная для выходного массива, и сразу же удобно 
 // под неё выделяется память на количество выходных символов
-    std::vector<CD> out_sym;
+    std::vector<CF> out_sym;
     out_sym.reserve(num_symbols);
 
 // Цикл преобразования битов в символы, в конце каждой итерации
@@ -27,11 +27,11 @@ std::vector<CD> QPSK(const std::vector<int8_t> &in_bits) {
     return out_sym;
 }
 
-std::vector<CD> BPSK(const std::vector<int8_t> &in_bits) {
+std::vector<CF> BPSK(const std::vector<int8_t> &in_bits) {
     
     size_t num_symbols = in_bits.size();
 
-    std::vector<CD> out_sym;
+    std::vector<CF> out_sym;
     out_sym.reserve(num_symbols);
 
     for(size_t i = 0; i < in_bits.size(); i++) {
@@ -45,14 +45,14 @@ std::vector<CD> BPSK(const std::vector<int8_t> &in_bits) {
     return out_sym;
 }
 
-std::vector<CD> QAM(const std::vector<int8_t> &in_bits) {
+std::vector<CF> QAM(const std::vector<int8_t> &in_bits) {
     
 // Переменная количество выходных символов
     size_t num_symbols = in_bits.size() / 2;
 
 // Объявляется переменная для выходного массива, и сразу же удобно 
 // под неё выделяется память на количество выходных символов
-    std::vector<CD> out_sym;
+    std::vector<CF> out_sym;
     out_sym.reserve(num_symbols);
 
 // Цикл преобразования битов в символы, в конце каждой итерации

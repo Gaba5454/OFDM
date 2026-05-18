@@ -2,6 +2,6 @@
 #define OFDM_H
 #include "const.h" 
 
-std::vector<CD> OFDM(const std::vector<CD>& in_sym);
+std::vector<CF> OFDM(const std::vector<CF>& in_sym);
 
 #endif
