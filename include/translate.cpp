@@ -1,20 +1,4 @@
-#include <SoapySDR/Device.h>
-#include <SoapySDR/Formats.h>
-#include <iostream>
-#include <stdlib.h>
-#include <math.h>
-#include <vector>
-#include "const.h"
-
-void to_cs16(const std::vector<CF>& src, std::vector<int16_t>& dst) {
-    dst.resize(src.size() * 2);  
-    for (size_t i = 0; i < src.size(); ++i) {
-        float re = std::clamp(src[i].real(), -1.0f, 1.0f) * 32767.0f;
-        float im = std::clamp(src[i].imag(), -1.0f, 1.0f) * 32767.0f;
-        dst[2*i]   = static_cast<int16_t>(std::lround(re));
-        dst[2*i+1] = static_cast<int16_t>(std::lround(im));
-    }
-}
+#include "translate.h"
 
 void ModeTX(SoapySDRDevice *sdr, std::vector<CF>& tx_array, size_t iteration_count) { 
 
@@ -83,4 +67,44 @@ void ModeTX(SoapySDRDevice *sdr, std::vector<CF>& tx_array, size_t iteration_cou
     
     printf("Часть ModeTX завершена успешно\n");
 
+}
+
+/**
+ * @brief Формирует кадр передачи с периодической вставкой синхросигнала (PSS).
+ * 
+ * Структура кадра: [PSS][DATA][DATA][DATA][DATA][PSS][DATA]...
+ * PSS вставляется каждые pss_period символов (по умолчанию — каждый 5-й).
+ * 
+ * @param num_iterations Общее количество символов в кадре.
+ * @param pss_symbol Символ PSS с уже добавленным циклическим префиксом.
+ * @param data_symbol Обычный символ данных с циклическим префиксом.
+ * @param pss_period Период вставки PSS (по умолчанию 5).
+ * @return std::vector<CF> Полный кадр для передачи.
+ */
+std::vector<CF> buildTxFrame(
+    size_t num_iterations,
+    const std::vector<CF>& pss_symbol,
+    const std::vector<CF>& data_symbol,
+    size_t pss_period = 5) 
+{
+    // Быстрая проверка на пустой вход
+    if (num_iterations == 0 || pss_symbol.empty() || data_symbol.empty()) {
+        return {};
+    }
+
+    // Оцениваем размер: грубая оценка для reserve (все символы считаем как data)
+    const size_t estimated_size = num_iterations * data_symbol.size();
+    std::vector<CF> frame;
+    frame.reserve(estimated_size);
+
+    for (size_t i = 0; i < num_iterations; ++i) {
+        // Вставляем PSS каждые pss_period символов (включая 0-й)
+        if (i % pss_period == 0) {
+            frame.insert(frame.end(), pss_symbol.begin(), pss_symbol.end());
+        } else {
+            frame.insert(frame.end(), data_symbol.begin(), data_symbol.end());
+        }
+    }
+
+    return frame;
 }
