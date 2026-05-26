@@ -1,13 +1,21 @@
-#ifndef GUI_H
-#define GUI_H
+#pragma once
 
 #include "const.h"
 #include <vector>
 #include <string>
+#include <GL/glew.h>
+#include <SDL2/SDL.h>
+#include <imgui.h>
+#include <implot.h>
+#include <backends/imgui_impl_opengl3.h>
+#include <backends/imgui_impl_sdl2.h>
+#include <iostream>
+#include <numeric> 
+#include <algorithm> 
 
 void run_gui(
     const std::string& original_text,
-    const std::vector<int8_t>& raw_bits,
+    const std::vector<uint8_t>& raw_bits,
     const std::vector<CF>& qpsk_symbols,
     const std::vector<CF>& pss_signal,
     const std::vector<CF>& ofdm_symbols,
@@ -19,5 +27,3 @@ void run_gui(
     const std::string& recovered_text,             
     const std::vector<CF>& received_constellation  
 );
-
-#endif 
