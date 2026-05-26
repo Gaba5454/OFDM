@@ -1,6 +1,4 @@
-#ifndef MODULATIONS_H
-#define MODULATIONS_H
+#pragma once
 
-std::vector<CF> QPSK(const std::vector<int8_t> &in_bits);
+std::vector<CF> qpsk(const std::vector<uint8_t> &in_bits);
 
-#endif
