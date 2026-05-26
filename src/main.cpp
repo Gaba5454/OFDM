@@ -1,79 +1,64 @@
-#include "../include/functions.h"
+#include "../include/another_functions.h"
 #include "../include/modulations.h"
-#include "../include/ofdm.h"
+#include "../include/pss_generator.h"
+#include "../include/ofdm_symbol.h"
+#include "../include/cycle_prefix.h"
+#include "../include/channel_simulate.h"
+#include "../include/corellations.h"
+#include "../include/cfo_functions.h"
 #include "../include/gui.h"
-#include <iostream>
-#include <algorithm>
-#include <vector>
-
+#include "../include/translate.h"
 
 int main() {
 
-        // 1. Входные данные
+        // Входные данные
         std::string text = "BUREAU1440";
         std::cout << "Processing text: \"" << text << "\"" << std::endl;
 
-        // 2. Преобразование в биты
-        std::vector<int8_t> raw_bits = string_to_bits(text);
+        // Преобразование в биты
+        auto raw_bits = string_to_bits(text);
 
-        // 3. Модуляция QPSK
-        std::vector<CF> symbols = QPSK(raw_bits);
+        // Модуляция QPSK
+        auto symbols = qpsk(raw_bits);
 
-        // 4. Генерация PSS (NID=1 == root index 29)
-        std::vector<CF> pssSignal = PSS(1);
+        // Генерация PSS (NID=1 == root index 29)
+        auto pssSignal = primary_synchronization_signal(1);
 
-        // 5. OFDM модуляция данных
-        std::vector<CF> ofdm_symbols = OFDM(symbols);
+        // OFDM модуляция данных
+        auto ofdm_symbols = ofdm(symbols);
 
-        // 6. Добавление циклического префикса
-        std::vector<CF> ofdm_with_cp = cyclicPrefix(ofdm_symbols, CP_LENGTH);
-        std::vector<CF> pss_with_cp = cyclicPrefix(pssSignal, CP_LENGTH);
+        // Добавление циклического префикса
+        auto ofdm_with_cp = cyclicPrefix(ofdm_symbols, CP_LENGTH);
+        auto pss_with_cp = cyclicPrefix(pssSignal, CP_LENGTH);
 
-        // 7. Формирование полного кадра передачи (Tx Array)
-        std::vector<CF> array_for_tx;
-        array_for_tx.reserve(iter * (LTE + CP_LENGTH));
-        for(int i = 0; i < iter; i++){
-            if (i % 5 == 0){
-                // Вставляем PSS каждые 5 символов
-                array_for_tx.insert(array_for_tx.end(), pss_with_cp.begin(), pss_with_cp.end());
-            }
-            else {
-                // Иначе вставляем символы с данными
-                array_for_tx.insert(array_for_tx.end(), ofdm_with_cp.begin(), ofdm_with_cp.end());
-            }
-        }
+        // Просто и понятно:
+        auto array_for_tx = buildTxFrame(iter, pss_with_cp, ofdm_with_cp, 5);
 
-        // 7.1 Искажение кадра средой передачи
-        std::vector<CF> bad_array_for_tx;
-        bad_array_for_tx = channelSimulation(array_for_tx, array_for_tx.size(), 0.5);
-        // 8. Синхронизация: Корреляция для поиска PSS
-        std::vector<double> corr_map = correlationPSS(bad_array_for_tx, pssSignal);
-
-        // 8.1 Вычисление индекса начала PSS
-        int peak_pos = 0;
-        if (!corr_map.empty()) {
-            auto max_it = std::max_element(corr_map.begin(), corr_map.end());
-            peak_pos = std::distance(corr_map.begin(), max_it);
-            
-            std::cout << "Sync: PSS found at sample index " << peak_pos << std::endl;
-        } else {
-            std::cerr << "Error: Correlation map is empty!" << std::endl;
-        }
+        // Искажение кадра средой передачи
+        auto bad_array_for_tx = channelSimulation(array_for_tx, 0.1);
         
-        // 8.2 Обрезка полезных данных
-        std::vector<CF> extracted_data = extractDataAfterPSS(peak_pos, bad_array_for_tx);
+        // Синхронизация: Корреляция для поиска PSS
+        auto corr_map = correlationPSS(bad_array_for_tx, pssSignal);
 
-        //  =========================================
-        // 9. Частотная синхронизация 
-        const size_t SYMBOL_LEN = LTE + CP_LENGTH; // 148
+        auto peak_pos = findCorrelationPeak(corr_map);
+        
+        if (peak_pos != 0 || !corr_map.empty()) {  // 0 может быть валидным пиком!
+            std::cout << "Sync: PSS found at sample index " << peak_pos << std::endl;
+        }
+
+        // Обрезка полезных данных
+        auto extracted_data = extractDataAfterPSS(peak_pos, bad_array_for_tx, SYMBOL_LEN*3);
+
+        // Частотная синхронизация 
 
         // Сделать обработку случая если данных всего один символ
         if (extracted_data.size() >= SYMBOL_LEN) {
-            // Вырезаем первый символ
+            // Вырезаем п ервый символ
+
             std::vector<CF> first_symbol(extracted_data.begin(), extracted_data.begin() + SYMBOL_LEN);
 
             // 2. Измеряем ошибку частоты
-            double cfo = estimate_cfo(first_symbol, LTE, CP_LENGTH);
+            auto cfo = estimate_cfo(first_symbol, LTE, CP_LENGTH, 1e-3);
             
             std::cout << "Detected Frequency Offset (normalized): " << cfo << std::endl;
             // Если всё идеально, cfo будет близко к 0.
@@ -81,10 +66,18 @@ int main() {
 
             // 3. Исправляем ВЕСЬ поток данных
             std::vector<CF> data_fixed = compensate_cfo(extracted_data, cfo, LTE, CP_LENGTH);
-
+        
             // === ДЕКОДИРОВАНИЕ ===
             DecodedResult decoded = decode_ofdm_stream(data_fixed, LTE, CP_LENGTH);
 
+            for (int i = 0; i < 8; ++i) {
+                CF s = decoded.constellation_points[i];
+
+                int b0 = (s.real() >= 0.0f) ? 1 : 0; 
+                int b1 = (s.imag() >= 0.0f) ? 1 : 0;
+                std::cout << b0 << b1;
+            }
+            std::cout << std::endl;
             // Обрезаем восстановленный текст до длины исходного
             std::string clean_text = decoded.recovered_text.substr(0, text.size());
 
@@ -116,8 +109,3 @@ int main() {
 }
 
 
-
-// Метода от Ивана про симуляцию канала
-// Написать CFO для симуляции канала
-// Отделить симуляцию канала в отдельный файл
-// Написать отдельно передачу и прием
