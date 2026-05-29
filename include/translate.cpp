@@ -7,7 +7,7 @@ void ModeTX(SoapySDRDevice *sdr, std::vector<CF>& tx_array, size_t iteration_cou
     const u_int carrier_freq = 800e6;
     SoapySDRDevice_setSampleRate(sdr, SOAPY_SDR_TX, 0, sample_rate);
     SoapySDRDevice_setFrequency(sdr, SOAPY_SDR_TX, 0, carrier_freq, NULL);
-
+    
     // Параметры для железа SDR
     size_t channels[] = {0};
     SoapySDRDevice_setGain(sdr, SOAPY_SDR_TX, channels[0], -20.0); // Усиление TX
@@ -27,7 +27,7 @@ void ModeTX(SoapySDRDevice *sdr, std::vector<CF>& tx_array, size_t iteration_cou
     std::cout <<  " tx_mtu = " << tx_mtu << std::endl;
     std::vector<CF> tx_buff = tx_array;
     
-    // ============ Здесь нужно давать отрисовывать imgui
+
 
     const long timeoutUs = 400000;
     long long last_time = 0;
@@ -55,10 +55,7 @@ void ModeTX(SoapySDRDevice *sdr, std::vector<CF>& tx_array, size_t iteration_cou
         // Логи
         printf("Buffer: %lu - TimeDiff: %lli ns\n\n", buffer_TX, timeNs - last_time);
         last_time = timeNs;
-
-
         buffer_TX++;
-        
     }
         // === Очистка SDR ===
     SoapySDRDevice_deactivateStream(sdr, txStream, 0, 0);
@@ -69,42 +66,3 @@ void ModeTX(SoapySDRDevice *sdr, std::vector<CF>& tx_array, size_t iteration_cou
 
 }
 
-/**
- * @brief Формирует кадр передачи с периодической вставкой синхросигнала (PSS).
- * 
- * Структура кадра: [PSS][DATA][DATA][DATA][DATA][PSS][DATA]...
- * PSS вставляется каждые pss_period символов (по умолчанию — каждый 5-й).
- * 
- * @param num_iterations Общее количество символов в кадре.
- * @param pss_symbol Символ PSS с уже добавленным циклическим префиксом.
- * @param data_symbol Обычный символ данных с циклическим префиксом.
- * @param pss_period Период вставки PSS (по умолчанию 5).
- * @return std::vector<CF> Полный кадр для передачи.
- */
-std::vector<CF> buildTxFrame(
-    size_t num_iterations,
-    const std::vector<CF>& pss_symbol,
-    const std::vector<CF>& data_symbol,
-    size_t pss_period = 5) 
-{
-    // Быстрая проверка на пустой вход
-    if (num_iterations == 0 || pss_symbol.empty() || data_symbol.empty()) {
-        return {};
-    }
-
-    // Оцениваем размер: грубая оценка для reserve (все символы считаем как data)
-    const size_t estimated_size = num_iterations * data_symbol.size();
-    std::vector<CF> frame;
-    frame.reserve(estimated_size);
-
-    for (size_t i = 0; i < num_iterations; ++i) {
-        // Вставляем PSS каждые pss_period символов (включая 0-й)
-        if (i % pss_period == 0) {
-            frame.insert(frame.end(), pss_symbol.begin(), pss_symbol.end());
-        } else {
-            frame.insert(frame.end(), data_symbol.begin(), data_symbol.end());
-        }
-    }
-
-    return frame;
-}

@@ -1,111 +1,143 @@
-#include "../include/another_functions.h"
-#include "../include/modulations.h"
-#include "../include/pss_generator.h"
-#include "../include/ofdm_symbol.h"
-#include "../include/cycle_prefix.h"
-#include "../include/channel_simulate.h"
-#include "../include/corellations.h"
-#include "../include/cfo_functions.h"
-#include "../include/gui.h"
+// src/main.cpp
+#include "../include/simulation.h"
 #include "../include/translate.h"
+#include "../include/receive.h"
+#include <cstring>
+#include <iostream>
+#include <string>
 
-int main() {
 
-        // Входные данные
-        std::string text = "BUREAU1440";
-        std::cout << "Processing text: \"" << text << "\"" << std::endl;
 
-        // Преобразование в биты
-        auto raw_bits = string_to_bits(text);
+int main(int argc, char* argv[]) {
+    
+    std::string mode = argv[1];
+    const char *device_uri = argv[2];
 
-        // Модуляция QPSK
-        auto symbols = qpsk(raw_bits);
-
-        // Генерация PSS (NID=1 == root index 29)
-        auto pssSignal = primary_synchronization_signal(1);
-
-        // OFDM модуляция данных
-        auto ofdm_symbols = ofdm(symbols);
-
-        // Добавление циклического префикса
-        auto ofdm_with_cp = cyclicPrefix(ofdm_symbols, CP_LENGTH);
-        auto pss_with_cp = cyclicPrefix(pssSignal, CP_LENGTH);
-
-        // Просто и понятно:
-        auto array_for_tx = buildTxFrame(iter, pss_with_cp, ofdm_with_cp, 5);
-
-        // Искажение кадра средой передачи
-        auto bad_array_for_tx = channelSimulation(array_for_tx, 0.1);
-        
-        // Синхронизация: Корреляция для поиска PSS
-        auto corr_map = correlationPSS(bad_array_for_tx, pssSignal);
-
-        auto peak_pos = findCorrelationPeak(corr_map);
-        
-        if (peak_pos != 0 || !corr_map.empty()) {  // 0 может быть валидным пиком!
-            std::cout << "Sync: PSS found at sample index " << peak_pos << std::endl;
+    if (argc < 2) {
+        print_usage(argv[0]);
+        return 1;
+    }
+    
+    if (mode == "simulation") {
+        simulation();
+        return 0;
+    }
+    
+    if (mode == "TX" || mode == "RX") {
+        if (argc < 3) {
+            std::cerr << "Error: Device argument required for " << mode << " mode\n\n";
+            print_usage(argv[0]);
+            return 1;
         }
 
-        // Обрезка полезных данных
-        auto extracted_data = extractDataAfterPSS(peak_pos, bad_array_for_tx, SYMBOL_LEN*3);
+        SoapySDRKwargs args = {};
+        SoapySDRKwargs_set(&args, "driver", "plutosdr");
+        SoapySDRKwargs_set(&args, "uri", device_uri);
+        SoapySDRKwargs_set(&args, "direct", "1");
+        SoapySDRKwargs_set(&args, "timestamp_every", "1920");
+        SoapySDRKwargs_set(&args, "loopback", "0");
+        SoapySDRDevice *sdr = SoapySDRDevice_make(&args);
+        SoapySDRKwargs_clear(&args);
 
-        // Частотная синхронизация 
-
-        // Сделать обработку случая если данных всего один символ
-        if (extracted_data.size() >= SYMBOL_LEN) {
-            // Вырезаем п ервый символ
-
-            std::vector<CF> first_symbol(extracted_data.begin(), extracted_data.begin() + SYMBOL_LEN);
-
-            // 2. Измеряем ошибку частоты
-            auto cfo = estimate_cfo(first_symbol, LTE, CP_LENGTH, 1e-3);
-            
-            std::cout << "Detected Frequency Offset (normalized): " << cfo << std::endl;
-            // Если всё идеально, cfo будет близко к 0.
-            // Если есть рассинхронизация, там будет число вроде 0.001 или -0.005.
-
-            // 3. Исправляем ВЕСЬ поток данных
-            std::vector<CF> data_fixed = compensate_cfo(extracted_data, cfo, LTE, CP_LENGTH);
+        if (!sdr) {
+            std::cerr << "Failed to open SDR device: " << device_uri << std::endl;
+            return 1;
+        }
         
-            // === ДЕКОДИРОВАНИЕ ===
-            DecodedResult decoded = decode_ofdm_stream(data_fixed, LTE, CP_LENGTH);
-
-            for (int i = 0; i < 8; ++i) {
-                CF s = decoded.constellation_points[i];
-
-                int b0 = (s.real() >= 0.0f) ? 1 : 0; 
-                int b1 = (s.imag() >= 0.0f) ? 1 : 0;
-                std::cout << b0 << b1;
+        if (mode == "TX") {
+            const std::string text = "BUREAU1440";
+            const size_t iter = 10;
+            
+            auto raw_bits = string_to_bits(text);
+            auto symbols = qpsk(raw_bits);
+            auto pssSignal = primary_synchronization_signal(1);
+            auto ofdm_symbols = ofdm(symbols);
+            auto ofdm_with_cp = cyclicPrefix(ofdm_symbols, CP_LENGTH);
+            auto pss_with_cp = cyclicPrefix(pssSignal, CP_LENGTH);
+            auto tx_frame = buildTxFrame(iter, pss_with_cp, ofdm_with_cp, 5);
+            
+            std::cout << "TX: Sending " << tx_frame.size() << " samples via " << device_uri << std::endl;
+            
+            ModeTX(sdr, tx_frame, iter);
+            
+            std::cout << "TX completed." << std::endl;
+            
+            
+        } 
+        if (mode == "RX") {  
+            std::cout << "RX: Listening on " << device_uri << " for 100 ms..." << std::endl;
+            const size_t iter = 10;
+            auto rx_samples = ModeRX(sdr, iter);
+            
+            if (rx_samples.empty()) {
+                std::cerr << "RX: No samples received." << std::endl;
+                SoapySDRDevice_unmake(sdr);
+                return 1;
             }
-            std::cout << std::endl;
-            // Обрезаем восстановленный текст до длины исходного
-            std::string clean_text = decoded.recovered_text.substr(0, text.size());
+            
+            std::cout << "RX: Received " << rx_samples.size() << " samples" << std::endl;
+            
+            const std::string expected_text = "BUREAU1440";
+            auto pssSignal = primary_synchronization_signal(1);
 
-            std::cout << "----------------------------------------" << std::endl;
-            std::cout << "Original Text: \"" << text << "\"" << std::endl;
-            std::cout << "Recovered Text: \"" << clean_text << "\"" << std::endl;
-            std::cout << "Match: " << (clean_text == text ? "YES" : "NO") << std::endl;
-            std::cout << "----------------------------------------" << std::endl;
+            auto corr_map = correlationPSS(rx_samples, pssSignal);
+            auto peak_pos = findCorrelationPeak(corr_map);
+            
+            if (!corr_map.empty()) {
+                std::cout << "Sync: PSS found at index " << peak_pos << std::endl;
+            }
+            
+            auto extracted_data = extractDataAfterPSS(peak_pos, rx_samples, SYMBOL_LEN * 3);
+            
+            if (extracted_data.size() >= SYMBOL_LEN) {
 
-            // 9. Запуск визуализации
-            run_gui(
-                text,                       // original_text
-                raw_bits,                   // raw_bits
-                symbols,                    // qpsk_symbols
-                pssSignal,                  // pss_signal
-                ofdm_symbols,               // ofdm_symbols
-                ofdm_with_cp,               // ofdm_with_cp
-                bad_array_for_tx,           // tx_array
-                corr_map,                   // correlation_map
-                peak_pos,                   // peak_position 
-                extracted_data,             // extracted_data
-                decoded.recovered_text, 
-                decoded.constellation_points
-            );
+                std::vector<CF> first_symbol(extracted_data.begin(), extracted_data.begin() + SYMBOL_LEN);
+                auto cfo = estimate_cfo(first_symbol, LTE, CP_LENGTH, 1e-3);
+                std::cout << "CFO: " << cfo << std::endl;
+                
+                std::vector<CF> data_fixed = compensate_cfo(extracted_data, cfo, LTE, CP_LENGTH);
+                
+                // Декодирование
+                DecodedResult decoded = decode_ofdm_stream(data_fixed, LTE, CP_LENGTH);
+                
+                // Результат
+                std::string clean_text = decoded.recovered_text.substr(0, expected_text.size());
+                
+                std::cout << "----------------------------------------\n";
+                std::cout << "Expected: \"" << expected_text << "\"\n";
+                std::cout << "Received: \"" << clean_text << "\"\n";
+                std::cout << "Match: " << (clean_text == expected_text ? "YES" : "NO") << "\n";
+                std::cout << "----------------------------------------\n";
+                
+                auto pssSignal = primary_synchronization_signal(1);
+
+                run_gui(
+                    expected_text,              // original_text (для сравнения)
+                    {},                         // raw_bits (пустой, т.к. не знаем точно, что отправили)
+                    {},                         // qpsk_symbols (пустой)
+                    pssSignal,                  // pss_signal (эталон для корреляции)
+                    {},                         // ofdm_symbols (пустой)
+                    {},                         // ofdm_with_cp (пустой)
+                    rx_samples,                 // tx_array ← ГЛАВНОЕ: реальный принятый сигнал!
+                    corr_map,                   // correlation_map (из rx_samples)
+                    peak_pos,                   // peak_position
+                    extracted_data,             // данные после извлечения
+                    decoded.recovered_text,     // восстановленный текст
+                    decoded.constellation_points // созвездие из принятых данных
+                );
+            }
+            
+        }
+        
+        // Очистка SDR
+        SoapySDRDevice_unmake(sdr);
+        return 0;
     }
-
-
-    return 0;
+    
+    // === Неизвестный режим ===
+    std::cerr << "Error: Unknown mode '" << mode << "'\n\n";
+    print_usage(argv[0]);
+    return 1;
 }
 
 

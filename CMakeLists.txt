@@ -39,6 +39,8 @@ set(PROJECT_SOURCES
     include/cfo_functions.cpp
     include/pss_generator.cpp 
     include/translate.cpp 
+    include/receive.cpp
+    include/simulation.cpp 
     include/another_functions.cpp
 )
 

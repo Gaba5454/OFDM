@@ -41,7 +41,6 @@ std::vector<CF> ofdm(const std::vector<CF>& in_sym) {
             in[i][1] = in_sym[sym_idx].imag();
             ++sym_idx; 
         } else {
-            // Если данные кончились — явно зануляем
             in[i][0] = 0.0;
             in[i][1] = 0.0;
         }
@@ -59,8 +58,7 @@ std::vector<CF> ofdm(const std::vector<CF>& in_sym) {
 
     std::vector<CF> out_sig(LTE);
     for(size_t i = 0; i < LTE; ++i){
-        out_sig[i] = CF(out[i][0],
-                                   out[i][1]);
+        out_sig[i] = CF(out[i][0],out[i][1]);
     }
 
     fftw_destroy_plan(plan);

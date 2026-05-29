@@ -8,4 +8,4 @@
 #include <vector>
 #include "const.h"
 
-void ModeRX(SoapySDRDevice *sdr, std::vector<CF>& tx_array, size_t iteration_count);
+std::vector<CF> ModeRX(SoapySDRDevice *sdr, size_t iteration_count);

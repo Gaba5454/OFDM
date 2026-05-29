@@ -1,7 +1,6 @@
 #pragma once
 
 #include "const.h"
-#include <vector>
 #include <string>
 #include <GL/glew.h>
 #include <SDL2/SDL.h>
@@ -9,9 +8,10 @@
 #include <implot.h>
 #include <backends/imgui_impl_opengl3.h>
 #include <backends/imgui_impl_sdl2.h>
-#include <iostream>
 #include <numeric> 
 #include <algorithm> 
+#include <fftw3.h>
+#include <cmath>
 
 void run_gui(
     const std::string& original_text,
@@ -27,3 +27,11 @@ void run_gui(
     const std::string& recovered_text,             
     const std::vector<CF>& received_constellation  
 );
+std::vector<float> compute_spectrogram_fftw(
+    const std::vector<CF>& signal,
+    int fft_size,
+    int hop_size,
+    int& out_rows,   // частотные бины (на выходе)
+    int& out_cols    // временные окна (на выходе)
+);
+void complex_to_vectors(const std::vector<CF>& in, std::vector<double>& out_real, std::vector<double>& out_imag);

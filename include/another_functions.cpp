@@ -133,3 +133,43 @@ DecodedResult decode_ofdm_stream(const std::vector<CF>& data_fixed, size_t n_fft
 
     return result;
 }
+
+
+std::vector<CF> buildTxFrame(
+    size_t num_iterations,
+    const std::vector<CF>& pss_symbol,
+    const std::vector<CF>& data_symbol,
+    size_t pss_period) 
+{
+    // Быстрая проверка на пустой вход
+    if (num_iterations == 0 || pss_symbol.empty() || data_symbol.empty()) {
+        return {};
+    }
+
+    // Оцениваем размер: грубая оценка для reserve (все символы считаем как data)
+    const size_t estimated_size = num_iterations * data_symbol.size();
+    std::vector<CF> frame;
+    frame.reserve(estimated_size);
+
+    for (size_t i = 0; i < num_iterations; ++i) {
+        // Вставляем PSS каждые pss_period символов (включая 0-й)
+        if (i % pss_period == 0) {
+            frame.insert(frame.end(), pss_symbol.begin(), pss_symbol.end());
+        } else {
+            frame.insert(frame.end(), data_symbol.begin(), data_symbol.end());
+        }
+    }
+
+    return frame;
+}
+
+void print_usage(const char* prog_name) {
+    std::cout << "Usage:\n"
+              << "  " << prog_name << " simulation              # Запустить симуляцию с визуализацией\n"
+              << "  " << prog_name << " TX <device>             # Передать сигнал через SDR\n"
+              << "  " << prog_name << " RX <device>             # Принять сигнал через SDR\n"
+              << "\nExamples:\n"
+              << "  " << prog_name << " simulation\n"
+              << "  " << prog_name << " TX usb:1.7.5\n"
+              << "  " << prog_name << " RX usb:1.8.5\\n";
+}

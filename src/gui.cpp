@@ -1,5 +1,69 @@
 #include "../include/gui.h"
 
+// Функция Хэннинга (окно для сглаживания)
+static inline double hann_window(int n, int N) {
+    return 0.5 * (1.0 - std::cos(2.0 * M_PI * n / (N - 1)));
+}
+
+// Расчёт спектрограммы через FFTW3
+std::vector<float> compute_spectrogram_fftw(
+    const std::vector<CF>& signal,
+    int fft_size,
+    int hop_size,
+    int& out_rows,   // частотные бины (на выходе)
+    int& out_cols    // временные окна (на выходе)
+) {
+    if (signal.empty() || fft_size < 64) {
+        out_rows = out_cols = 0;
+        return {};
+    }
+
+    out_rows = fft_size / 2 + 1;  // только положительные частоты
+    out_cols = 0;
+    std::vector<float> magnitude_data;
+
+    // Буферы для FFTW: комплексные числа в формате double[2]
+    fftw_complex* in = (fftw_complex*)fftw_malloc(sizeof(fftw_complex) * fft_size);
+    fftw_complex* out = (fftw_complex*)fftw_malloc(sizeof(fftw_complex) * fft_size);
+    
+    // План БПФ (FFTW_ESTIMATE — быстрый, FFTW_MEASURE — точнее, но медленнее при инициализации)
+    fftw_plan plan = fftw_plan_dft_1d(fft_size, in, out, FFTW_FORWARD, FFTW_ESTIMATE);
+
+    // Скользящее окно по сигналу
+    for (size_t start = 0; start + fft_size <= signal.size(); start += hop_size) {
+        // Заполняем входной буфер с окном Хэннинга
+        for (int i = 0; i < fft_size; ++i) {
+            double w = hann_window(i, fft_size);
+            in[i][0] = signal[start + i].real() * w;  // real part
+            in[i][1] = signal[start + i].imag() * w;  // imag part
+        }
+        
+        // Выполняем БПФ
+        fftw_execute(plan);
+        
+        // Извлекаем magnitude только для положительных частот (0...N/2)
+        for (int i = 0; i < out_rows; ++i) {
+            double real = out[i][0];
+            double imag = out[i][1];
+            double mag = std::sqrt(real*real + imag*imag);
+            // Конвертируем в dB с защитой от log(0)
+            float db = 20.0f * std::log10(mag + 1e-10);
+            magnitude_data.push_back(db);
+        }
+        ++out_cols;
+        
+        // Ограничение для производительности (опционально)
+        if (out_cols >= 256) break;
+    }
+
+    // Очистка ресурсов FFTW
+    fftw_destroy_plan(plan);
+    fftw_free(in);
+    fftw_free(out);
+    // fftw_cleanup();  // можно вызвать в конце программы, но не обязательно
+
+    return magnitude_data;
+}
 
 // Вспомогательная функция для разделения комплексных чисел
 void complex_to_vectors(const std::vector<CF>& in, std::vector<double>& out_real, std::vector<double>& out_imag) {
@@ -33,7 +97,7 @@ void run_gui(
     
     SDL_Window* window = SDL_CreateWindow("OFDM Visualization", 
                                           SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 
-                                          1280, 720, 
+                                          1920, 1080, 
                                           SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
     
     SDL_GLContext gl_context = SDL_GL_CreateContext(window);
@@ -90,6 +154,18 @@ void run_gui(
     float noise_level = 0.1f;
     bool show_grid = true;
     int plot_height = 250;
+
+    // === Подготовка спектрограммы через FFTW3 ===
+    std::vector<float> spectrogram_values;
+    int spec_rows = 0, spec_cols = 0;
+    {
+        // Параметры STFT — подбери под свой OFDM-сигнал
+        int fft_size = 512;           // размер БПФ (степень двойки)
+        int hop_size = fft_size / 4;  // 75% перекрытие для плавности
+        
+        // Используем tx_array (полный передаваемый кадр)
+        spectrogram_values = compute_spectrogram_fftw(tx_array, fft_size, hop_size, spec_rows, spec_cols);
+    }
 
     // Главный цикл
     bool running = true;
@@ -211,6 +287,42 @@ void run_gui(
             std::vector<double> x_tx(tx_array.size());
             std::iota(x_tx.begin(), x_tx.end(), 0.0);
             ImPlot::PlotLine("Real", x_tx.data(), tx_real.data(), x_tx.size());
+            ImPlot::EndPlot();
+        }
+        ImGui::Spacing();
+
+        // 7. Спектрограмма (частота от времени)
+        ImGui::TextColored(ImVec4(0.6f, 0.9f, 1.0f, 1.0f), "7. Spectrogram (STFT)");
+        
+        // Используем BeginPlot БЕЗ лишних флагов
+        if (ImPlot::BeginPlot("##Spectrogram", ImVec2(-1, plot_height * 1.3f))) {
+            if (!spectrogram_values.empty() && spec_rows > 0 && spec_cols > 0) {
+                // Настройка осей
+                ImPlot::SetupAxes("Time window", "Frequency bin");
+                ImPlot::SetupAxisLimits(ImAxis_X1, 0, spec_cols, ImGuiCond_Always);
+                ImPlot::SetupAxisLimits(ImAxis_Y1, 0, spec_rows, ImGuiCond_Always);
+            
+                
+                // Отрисовка Heatmap
+                ImPlot::PlotHeatmap("Power [dB]", 
+                                    spectrogram_values.data(), 
+                                    spec_rows, 
+                                    spec_cols,
+                                    -60.0f, 
+                                    0.0f, 
+                                    "%.1f", 
+                                    ImVec2(0,0));
+                
+                // Легенда (используем ImGui::Text, а не ImPlot::Text!)
+                if (ImPlot::BeginLegendPopup("Power [dB]")) {
+                    ImGui::Text("Color scale: dB");
+                    ImPlot::EndLegendPopup();
+                }
+            } else {
+                // Если нет данных: рисуем текст ВНУТРИ графика
+                // PlotText принимает (текст, x, y). НЕ передавай сюда флаги!
+                ImPlot::PlotText("No data", spec_cols * 0.5, spec_rows * 0.5);
+            }
             ImPlot::EndPlot();
         }
         ImGui::Spacing();
