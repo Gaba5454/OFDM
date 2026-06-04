@@ -42,19 +42,12 @@ std::vector<CF> qpsk(const std::vector<uint8_t>& in_bits) {
 }
 
 std::vector<CF> QAM(const std::vector<int8_t> &in_bits) {
-    
-// Переменная количество выходных символов
+
     size_t num_symbols = in_bits.size() / 2;
 
-// Объявляется переменная для выходного массива, и сразу же удобно 
-// под неё выделяется память на количество выходных символов
     std::vector<CF> out_sym;
     out_sym.reserve(num_symbols);
 
-// Цикл преобразования битов в символы, в конце каждой итерации
-// Вычисляется финальная координата точки (с нормализацией).
-// Конструируется объект std::complex прямо в памяти вектора.
-// Увеличивается размер вектора на 1.
     for(size_t i = 0; i < in_bits.size(); i+=2) {
         int8_t bit0 = in_bits[i];
         int8_t bit1 = in_bits[i+1];

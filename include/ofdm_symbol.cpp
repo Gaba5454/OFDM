@@ -13,7 +13,7 @@ std::vector<CF> ofdm(const std::vector<CF>& in_sym) {
     *  28, 38, 48, 58, 68, 78, 88, 98
     */
 
-    std::vector<size_t> ind_pilots{28, 38, 48, 58, 68, 78, 88, 98};
+
 
     fftw_complex* in = (fftw_complex*)fftw_malloc(sizeof(fftw_complex) * LTE);
     fftw_complex* out = (fftw_complex*)fftw_malloc(sizeof(fftw_complex) * LTE);
@@ -23,6 +23,7 @@ std::vector<CF> ofdm(const std::vector<CF>& in_sym) {
         in[i][1] = 0.0;
     }
 
+    std::vector<size_t> ind_pilots{28, 38, 48, 58, 68, 78, 88, 98};
     size_t sym_idx = 0; 
 
     // Add pilots in symbol
@@ -36,6 +37,9 @@ std::vector<CF> ofdm(const std::vector<CF>& in_sym) {
         if(i == 64){
             continue;
         }
+        if(i == 28 || i == 38 || i == 48 || i == 58 || i == 68 || i == 78 || i == 88 || i == 98) {
+            continue;
+        }
         if (sym_idx < in_sym.size()) {
             in[i][0] = in_sym[sym_idx].real();
             in[i][1] = in_sym[sym_idx].imag();
@@ -43,6 +47,7 @@ std::vector<CF> ofdm(const std::vector<CF>& in_sym) {
         } else {
             in[i][0] = 0.0;
             in[i][1] = 0.0;
+            ++sym_idx; 
         }
     }
 

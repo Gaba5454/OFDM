@@ -9,4 +9,4 @@
 #include "cfo_functions.h"
 #include "gui.h"
 
-void simulation();
+void simulation(double SNR);

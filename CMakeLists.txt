@@ -42,6 +42,7 @@ set(PROJECT_SOURCES
     include/receive.cpp
     include/simulation.cpp 
     include/another_functions.cpp
+    include/equalizer.cpp
 )
 
 set(IMGUI_DIR "${CMAKE_SOURCE_DIR}/third_party/imgui")

@@ -83,12 +83,15 @@ void run_gui(
     const std::vector<CF>& ofdm_symbols,
     const std::vector<CF>& ofdm_with_cp,
     const std::vector<CF>& tx_array,
+    double SNR,
     const std::vector<double>& correlation_map,
     size_t peak_position,
     const std::vector<CF>& data_after_pss,
     const std::string& recovered_text,           
     const std::vector<CF>& received_constellation  
 ) {
+    (void)SNR;
+
     // 1. Инициализация SDL и OpenGL
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0) {
         std::cout << "Error: SDL_Init failed\n";
@@ -159,11 +162,9 @@ void run_gui(
     std::vector<float> spectrogram_values;
     int spec_rows = 0, spec_cols = 0;
     {
-        // Параметры STFT — подбери под свой OFDM-сигнал
-        int fft_size = 512;           // размер БПФ (степень двойки)
-        int hop_size = fft_size / 4;  // 75% перекрытие для плавности
+        int fft_size = 512;           
+        int hop_size = fft_size / 4;  
         
-        // Используем tx_array (полный передаваемый кадр)
         spectrogram_values = compute_spectrogram_fftw(tx_array, fft_size, hop_size, spec_rows, spec_cols);
     }
 
@@ -191,14 +192,15 @@ void run_gui(
         // === ЛЕВАЯ ПАНЕЛЬ (Инфо + Настройки) ===
         ImGui::BeginChild("LeftPanel", ImVec2(left_w, 0), true);
         
-        ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.2f, 1.0f), "SYSTEM STATUS");
+        ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.2f, 1.0f), "INFORMATION");
         ImGui::Separator();
-        ImGui::Text("Input Text: %s", original_text.c_str());
-        ImGui::Text("Raw Bits: %zu", raw_bits.size());
-        ImGui::Text("QPSK Symbols: %zu", qpsk_symbols.size());
-        ImGui::Text("PSS Length: %zu", pss_signal.size());
-        ImGui::Text("OFDM Size: %zu", ofdm_with_cp.size());
-        
+        ImGui::Text("Input text: %s", original_text.c_str());
+        ImGui::Text("Raw bits: %zu", raw_bits.size());
+        ImGui::Text("QPSK symbols: %zu", qpsk_symbols.size());
+        ImGui::Text("PSS ength: %zu", pss_signal.size());
+        ImGui::Text("OFDM-symbol length: %zu", ofdm_symbols.size());
+        ImGui::Text("CP length: %zu", ofdm_with_cp.size() - ofdm_symbols.size());
+
         ImGui::Spacing();
         ImGui::Separator();
         ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "SYNCHRONIZATION");
@@ -213,6 +215,7 @@ void run_gui(
         ImGui::Separator();
         ImGui::TextColored(ImVec4(0.2f, 0.8f, 1.0f, 1.0f), "PARAMETERS");
         ImGui::SliderFloat("Noise Level", &noise_level, 0.0f, 1.0f, "%.2f");
+        
         ImGui::Checkbox("Show Grid", &show_grid);
         ImGui::SliderInt("Plot Height", &plot_height, 100, 500);
         
@@ -287,42 +290,6 @@ void run_gui(
             std::vector<double> x_tx(tx_array.size());
             std::iota(x_tx.begin(), x_tx.end(), 0.0);
             ImPlot::PlotLine("Real", x_tx.data(), tx_real.data(), x_tx.size());
-            ImPlot::EndPlot();
-        }
-        ImGui::Spacing();
-
-        // 7. Спектрограмма (частота от времени)
-        ImGui::TextColored(ImVec4(0.6f, 0.9f, 1.0f, 1.0f), "7. Spectrogram (STFT)");
-        
-        // Используем BeginPlot БЕЗ лишних флагов
-        if (ImPlot::BeginPlot("##Spectrogram", ImVec2(-1, plot_height * 1.3f))) {
-            if (!spectrogram_values.empty() && spec_rows > 0 && spec_cols > 0) {
-                // Настройка осей
-                ImPlot::SetupAxes("Time window", "Frequency bin");
-                ImPlot::SetupAxisLimits(ImAxis_X1, 0, spec_cols, ImGuiCond_Always);
-                ImPlot::SetupAxisLimits(ImAxis_Y1, 0, spec_rows, ImGuiCond_Always);
-            
-                
-                // Отрисовка Heatmap
-                ImPlot::PlotHeatmap("Power [dB]", 
-                                    spectrogram_values.data(), 
-                                    spec_rows, 
-                                    spec_cols,
-                                    -60.0f, 
-                                    0.0f, 
-                                    "%.1f", 
-                                    ImVec2(0,0));
-                
-                // Легенда (используем ImGui::Text, а не ImPlot::Text!)
-                if (ImPlot::BeginLegendPopup("Power [dB]")) {
-                    ImGui::Text("Color scale: dB");
-                    ImPlot::EndLegendPopup();
-                }
-            } else {
-                // Если нет данных: рисуем текст ВНУТРИ графика
-                // PlotText принимает (текст, x, y). НЕ передавай сюда флаги!
-                ImPlot::PlotText("No data", spec_cols * 0.5, spec_rows * 0.5);
-            }
             ImPlot::EndPlot();
         }
         ImGui::Spacing();

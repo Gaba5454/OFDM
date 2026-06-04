@@ -21,17 +21,11 @@ void run_gui(
     const std::vector<CF>& ofdm_symbols,
     const std::vector<CF>& ofdm_with_cp,
     const std::vector<CF>& tx_array,
+    double SNR,
     const std::vector<double>& correlation_map,
     size_t peak_position,
     const std::vector<CF>& data_after_pss,
     const std::string& recovered_text,             
     const std::vector<CF>& received_constellation  
-);
-std::vector<float> compute_spectrogram_fftw(
-    const std::vector<CF>& signal,
-    int fft_size,
-    int hop_size,
-    int& out_rows,   // частотные бины (на выходе)
-    int& out_cols    // временные окна (на выходе)
 );
 void complex_to_vectors(const std::vector<CF>& in, std::vector<double>& out_real, std::vector<double>& out_imag);

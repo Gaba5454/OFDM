@@ -4,6 +4,7 @@
 #include <fftw3.h>
 #include "const.h" 
 #include "demodulations.h"
+#include "equalizer.h"
 
 void to_cs16(const std::vector<CF>& src, std::vector<int16_t>& dst);
 std::vector<uint8_t> string_to_bits(const std::string& text);

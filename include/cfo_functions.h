@@ -12,3 +12,4 @@ std::vector<CF> compensate_cfo(
     double cfo_normalized,
     size_t n_fft, 
     size_t n_cp);
+std::vector<CF> add_CFO(const std::vector<CF>& signal, double CFO_hz, double F_srate);
