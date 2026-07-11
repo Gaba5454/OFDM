@@ -1,12 +1,11 @@
-#include "const.h"
-#include "another_functions.h"
-#include "modulations.h"
-#include "pss_generator.h"
-#include "ofdm_symbol.h"
-#include "cycle_prefix.h"
-#include "channel_simulate.h"
-#include "corellations.h"
-#include "cfo_functions.h"
-#include "gui.h"
+#pragma once
 
-void simulation(double SNR);
+#include "gui.h"
+#include "modulation_map.h"
+
+GuiPlotData build_simulation_view(
+    const std::string& text,
+    double snr,
+    const ModulationSpec& modulation);
+
+void simulation(double snr, const ModulationSpec& modulation);

@@ -1,81 +1,96 @@
 #include "simulation.h"
 
-void simulation(double SNR){
-        std::string text = "BUREAU1440";
-        std::cout << "Processing text: \"" << text << "\"" << std::endl;
-        
-        // Преобразование в биты
-        auto raw_bits = string_to_bits(text);
+#include "cfo_functions.h"
+#include "channel_simulate.h"
+#include "corellations.h"
+#include "frame_builder.h"
+#include "frame_layout.h"
+#include "training_decoder.h"
 
-        // Модуляция QPSK
-        auto symbols = qpsk(raw_bits);
+namespace {
 
-        // Генерация PSS (NID=1 == root index 29)
-        auto pssSignal = primary_synchronization_signal(1);
+constexpr const char* kDefaultSimulationText = "BUREAU1440";
+constexpr size_t kSimulationFrameRepeats = 10;
 
-        // OFDM модуляция данных
-        auto ofdm_symbols = ofdm(symbols);
+}  // namespace
 
-        // Добавление циклического префикса
-        auto ofdm_with_cp = cyclicPrefix(ofdm_symbols, CP_LENGTH);
-        auto pss_with_cp = cyclicPrefix(pssSignal, CP_LENGTH);
+GuiPlotData build_simulation_view(
+    const std::string& text,
+    double snr,
+    const ModulationSpec& modulation)
+{
+    GuiPlotData view;
+    view.modulation_name = modulation.name;
+    view.snr = snr;
+    view.max_text_bytes = MAX_TEXT_BYTES;
+    view.text_was_truncated = text.size() > MAX_TEXT_BYTES;
+    view.original_text = text.substr(0, MAX_TEXT_BYTES);
 
-        auto array_for_tx = buildTxFrame(iter, pss_with_cp, ofdm_with_cp, 5);
+    const TxFrameData frame = build_tx_frame(view.original_text, modulation);
 
-        // Искажение кадра средой передачи
-        auto bad_array_for_tx = channelSimulation(array_for_tx, SNR);
-        
-        // Синхронизация: Корреляция для поиска PSS
-        auto corr_map = correlationPSS(bad_array_for_tx, pss_with_cp);
+    view.raw_bits = frame.bits;
+    view.modulated_symbols = frame.modulated_symbols;
+    view.ideal_constellation = ideal_constellation_points(modulation);
 
-        auto peak_pos = findCorrelationPeak(corr_map);
-        
-        if (peak_pos != SIZE_MAX) {
-            std::cout << "PSS found at sample index " << peak_pos << std::endl;
-        } else {
-            std::cerr << "PSS not found in simulation frame" << std::endl;
-        }
+    view.pss_signal = frame.pss_with_cp;
+    view.ofdm_symbols = frame.training_ofdm;
+    view.ofdm_with_cp = frame.training_with_cp;
 
-        // Обрезка полезных данных
-        auto extracted_data = extractDataAfterPSS(peak_pos, bad_array_for_tx, SYMBOL_LEN*3);
-
-        // Частотная синхронизация 
-        if (extracted_data.size() >= SYMBOL_LEN) {
-
-            std::vector<CF> first_symbol(extracted_data.begin(), extracted_data.begin() + SYMBOL_LEN);
-
-            auto cfo = estimate_cfo(first_symbol, LTE, CP_LENGTH, 1e-3);
-            
-            std::cout << "Detected Frequency Offset (normalized): " << cfo << std::endl;
-
-            std::vector<CF> data_fixed = compensate_cfo(extracted_data, cfo, LTE, CP_LENGTH);
-        
-            DecodedResult decoded = decode_ofdm_stream(data_fixed, LTE, CP_LENGTH);
-
-            std::string clean_text = decoded.recovered_text.substr(0, text.size());
-
-            std::cout << "----------------------------------------" << std::endl;
-            std::cout << "Original Text: \"" << text << "\"" << std::endl;
-            std::cout << "Recovered Text: \"" << clean_text << "\"" << std::endl;
-            std::cout << "Match: " << (clean_text == text ? "YES" : "NO") << std::endl;
-            std::cout << "----------------------------------------" << std::endl;
-
-            // 9. Запуск визуализации
-            run_gui(
-                text,                       // original_text
-                raw_bits,                   // raw_bits
-                symbols,                    // qpsk_symbols
-                pss_with_cp,                // pss_signal
-                ofdm_symbols,               // ofdm_symbols
-                ofdm_with_cp,               // ofdm_with_cp
-                bad_array_for_tx,           // tx_array
-                SNR,  
-                corr_map,                   // correlation_map
-                peak_pos,                   // peak_position 
-                extracted_data,             // extracted_data
-                clean_text, 
-                decoded.constellation_points
-            );
+    view.tx_array.reserve(kSimulationFrameRepeats * frame.samples.size());
+    for (size_t i = 0; i < kSimulationFrameRepeats; ++i) {
+        view.tx_array.insert(view.tx_array.end(), frame.samples.begin(), frame.samples.end());
     }
 
+    const std::vector<CF> rx_array = channelSimulation(view.tx_array, snr);
+    view.correlation_map = correlationPSS(rx_array, view.pss_signal);
+    view.peak_position = findCorrelationPeak(view.correlation_map);
+
+    if (view.peak_position == SIZE_MAX) {
+        return view;
+    }
+
+    const size_t training_start = view.peak_position + SYMBOL_LEN;
+    if (training_start + SYMBOL_LEN * (frame.payload_symbol_count + 1) > rx_array.size()) {
+        return view;
+    }
+
+    view.data_after_pss.assign(
+        rx_array.begin() + static_cast<ptrdiff_t>(training_start),
+        rx_array.begin() + static_cast<ptrdiff_t>(training_start + SYMBOL_LEN * (frame.payload_symbol_count + 1))
+    );
+
+    const std::vector<CF> first_symbol(
+        view.data_after_pss.begin(),
+        view.data_after_pss.begin() + static_cast<ptrdiff_t>(SYMBOL_LEN)
+    );
+    const double cfo = estimate_cfo(first_symbol, LTE, CP_LENGTH, 1e-3);
+    const std::vector<CF> data_fixed = compensate_cfo(view.data_after_pss, cfo);
+
+    const std::vector<CF> training_fixed(
+        data_fixed.begin(),
+        data_fixed.begin() + static_cast<ptrdiff_t>(SYMBOL_LEN)
+    );
+    const std::vector<CF> payload_fixed(
+        data_fixed.begin() + static_cast<ptrdiff_t>(SYMBOL_LEN),
+        data_fixed.end()
+    );
+
+    const DecodedResult decoded = decode_ofdm_stream_with_training(
+        training_fixed,
+        payload_fixed,
+        modulation,
+        LTE,
+        CP_LENGTH,
+        payload_data_indices().size()
+    );
+
+    view.recovered_text = decoded.recovered_text.substr(0, view.original_text.size());
+    view.received_constellation = decoded.constellation_points;
+    view.crc_ok = decoded.crc_ok;
+    return view;
+}
+
+void simulation(double snr, const ModulationSpec& modulation)
+{
+    run_simulation_gui(kDefaultSimulationText, snr, modulation.name);
 }

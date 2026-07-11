@@ -6,7 +6,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(BUILD_GUI "Build with GUI support" ON)
-option(ENABLE_WARNINGS "Enable compiler warnings" ON)
 
 
 # === Зависимости ===
@@ -30,8 +29,11 @@ endif()
 set(PROJECT_SOURCES
     src/main.cpp 
     src/gui.cpp
-    include/modulations.cpp 
-    include/demodulations.cpp 
+    include/app_runner.cpp
+    include/cli_utils.cpp
+    include/frame_builder.cpp
+    include/frame_layout.cpp
+    include/modulation_map.cpp
     include/ofdm_symbol.cpp 
     include/cycle_prefix.cpp
     include/channel_simulate.cpp 
@@ -40,8 +42,10 @@ set(PROJECT_SOURCES
     include/pss_generator.cpp 
     include/translate.cpp 
     include/receive.cpp
+    include/ofdm_radio.cpp
     include/simulation.cpp 
-    include/another_functions.cpp
+    include/payload_codec.cpp
+    include/training_decoder.cpp
     include/equalizer.cpp
 )
 
